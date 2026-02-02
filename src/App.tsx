@@ -13,6 +13,7 @@ import Hackathons from "./pages/Hackathons";
 import StudentDashboard from "./pages/StudentDashboard";
 import CollegeDashboard from "./pages/CollegeDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
+import Profile from "./pages/Profile";
 import About from "./pages/About";
 import NotFound from "./pages/NotFound";
 
@@ -35,6 +36,7 @@ const App = () => (
             <Route path="/student-dashboard" element={<StudentDashboard />} />
             <Route path="/college-dashboard" element={<CollegeDashboard />} />
             <Route path="/admin-dashboard" element={<AdminDashboard />} />
+            <Route path="/profile" element={<Profile />} />
             <Route path="/about" element={<About />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
