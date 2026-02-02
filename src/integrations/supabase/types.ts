@@ -97,93 +97,107 @@ export type Database = {
         }
         Relationships: []
       }
-      opportunities: {
+      hackathon_registrations: {
         Row: {
-          company_name: string | null
-          created_at: string
-          created_by: string | null
-          deadline: string | null
-          description: string | null
+          branch: string
+          college_name: string
+          email: string
+          event_id: string
+          full_name: string
           id: string
-          is_featured: boolean | null
-          location: string | null
-          opportunity_type: string
-          requirements: string | null
-          salary_range: string | null
-          title: string
-          updated_at: string
+          phone: string | null
+          registered_at: string
+          roll_number: string
+          status: string | null
+          user_id: string
         }
         Insert: {
-          company_name?: string | null
-          created_at?: string
-          created_by?: string | null
-          deadline?: string | null
-          description?: string | null
+          branch: string
+          college_name: string
+          email: string
+          event_id: string
+          full_name: string
           id?: string
-          is_featured?: boolean | null
-          location?: string | null
-          opportunity_type: string
-          requirements?: string | null
-          salary_range?: string | null
-          title: string
-          updated_at?: string
+          phone?: string | null
+          registered_at?: string
+          roll_number: string
+          status?: string | null
+          user_id: string
         }
         Update: {
-          company_name?: string | null
-          created_at?: string
-          created_by?: string | null
-          deadline?: string | null
-          description?: string | null
+          branch?: string
+          college_name?: string
+          email?: string
+          event_id?: string
+          full_name?: string
           id?: string
-          is_featured?: boolean | null
-          location?: string | null
-          opportunity_type?: string
-          requirements?: string | null
-          salary_range?: string | null
-          title?: string
-          updated_at?: string
+          phone?: string | null
+          registered_at?: string
+          roll_number?: string
+          status?: string | null
+          user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "hackathon_registrations_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
           avatar_url: string | null
+          branch: string | null
+          college_id: string | null
           college_name: string | null
           created_at: string
           email: string
           full_name: string
           graduation_year: number | null
           id: string
+          is_verified: boolean | null
           organization_name: string | null
           phone: string | null
+          roll_number: string | null
           updated_at: string
           user_id: string
           user_type: Database["public"]["Enums"]["user_type"]
         }
         Insert: {
           avatar_url?: string | null
+          branch?: string | null
+          college_id?: string | null
           college_name?: string | null
           created_at?: string
           email: string
           full_name: string
           graduation_year?: number | null
           id?: string
+          is_verified?: boolean | null
           organization_name?: string | null
           phone?: string | null
+          roll_number?: string | null
           updated_at?: string
           user_id: string
           user_type?: Database["public"]["Enums"]["user_type"]
         }
         Update: {
           avatar_url?: string | null
+          branch?: string | null
+          college_id?: string | null
           college_name?: string | null
           created_at?: string
           email?: string
           full_name?: string
           graduation_year?: number | null
           id?: string
+          is_verified?: boolean | null
           organization_name?: string | null
           phone?: string | null
+          roll_number?: string | null
           updated_at?: string
           user_id?: string
           user_type?: Database["public"]["Enums"]["user_type"]
@@ -228,6 +242,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_admin: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
       college_role:

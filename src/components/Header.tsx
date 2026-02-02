@@ -31,8 +31,6 @@ export function Header() {
         return "/student-dashboard";
       case "college":
         return "/college-dashboard";
-      case "company":
-        return "/company-dashboard";
       case "admin":
         return "/admin-dashboard";
       default:
@@ -60,11 +58,8 @@ export function Header() {
           <Link to="/hackathons" className="text-sm font-medium text-white/70 transition-colors hover:text-white">
             Hackathons
           </Link>
-          <Link to="/opportunities" className="text-sm font-medium text-white/70 transition-colors hover:text-white">
-            Jobs
-          </Link>
-          <Link to="/internships" className="text-sm font-medium text-white/70 transition-colors hover:text-white">
-            Internships
+          <Link to="/about" className="text-sm font-medium text-white/70 transition-colors hover:text-white">
+            About
           </Link>
         </nav>
 
@@ -141,18 +136,11 @@ export function Header() {
                 Hackathons
               </Link>
               <Link
-                to="/opportunities"
+                to="/about"
                 className="text-sm font-medium text-white/70"
                 onClick={() => setMobileMenuOpen(false)}
               >
-                Jobs
-              </Link>
-              <Link
-                to="/internships"
-                className="text-sm font-medium text-white/70"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                Internships
+                About
               </Link>
               <div className="flex flex-col gap-2 pt-4">
                 {user ? (

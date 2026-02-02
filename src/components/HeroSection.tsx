@@ -1,13 +1,13 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useNavigate } from "react-router-dom";
-import { Search, Calendar, Code2, Briefcase } from "lucide-react";
+import { Search, Calendar, Code2 } from "lucide-react";
 import eventgoLogo from "@/assets/eventgo-logo.png";
 
 const stats = [
   { value: "500+", label: "Events" },
   { value: "100+", label: "Colleges" },
-  { value: "1K+", label: "Jobs" },
+  { value: "200+", label: "Hackathons" },
   { value: "50K+", label: "Students" },
 ];
 
@@ -21,11 +21,6 @@ const features = [
     icon: Code2,
     title: "Hackathons",
     description: "Build, compete & win exciting prizes",
-  },
-  {
-    icon: Briefcase,
-    title: "Jobs & Internships",
-    description: "Find your dream career opportunity",
   },
 ];
 
@@ -54,8 +49,8 @@ export function HeroSection() {
           </h1>
 
           <p className="mb-8 animate-fade-in text-base text-white/70 md:text-lg">
-            Discover college events, hackathons, jobs, and internships. Your gateway to
-            career opportunities and campus experiences.
+            Discover college events and hackathons. Your gateway to
+            campus experiences and competitions.
           </p>
 
           {/* Search Bar */}
@@ -63,7 +58,7 @@ export function HeroSection() {
             <div className="relative flex-1">
               <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Search events, jobs, hackathons..."
+                placeholder="Search events, hackathons..."
                 className="h-12 bg-white pl-12 text-foreground placeholder:text-muted-foreground"
               />
             </div>
@@ -83,7 +78,7 @@ export function HeroSection() {
           </div>
 
           {/* Feature Cards */}
-          <div className="grid animate-fade-in-up gap-4 md:grid-cols-3">
+          <div className="mx-auto grid max-w-2xl animate-fade-in-up gap-4 md:grid-cols-2">
             {features.map((feature, index) => (
               <div
                 key={index}

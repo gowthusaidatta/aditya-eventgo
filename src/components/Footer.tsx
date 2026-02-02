@@ -11,7 +11,7 @@ export function Footer() {
           <div className="space-y-4">
             <img src={eventgoLogo} alt="EventGo" className="h-10 w-auto" />
             <p className="text-sm text-white/60">
-              Connecting colleges, students, and companies through events and opportunities.
+              Connecting colleges and students through events and hackathons.
             </p>
             <div className="flex items-center gap-2">
               <span className="text-xs text-white/60">In collaboration with</span>
@@ -25,8 +25,7 @@ export function Footer() {
             <nav className="flex flex-col gap-2 text-sm text-white/60">
               <Link to="/events" className="hover:text-white">Events</Link>
               <Link to="/hackathons" className="hover:text-white">Hackathons</Link>
-              <Link to="/opportunities" className="hover:text-white">Jobs</Link>
-              <Link to="/internships" className="hover:text-white">Internships</Link>
+              <Link to="/about" className="hover:text-white">About Us</Link>
             </nav>
           </div>
 
@@ -36,8 +35,7 @@ export function Footer() {
             <nav className="flex flex-col gap-2 text-sm text-white/60">
               <Link to="/signup?type=student" className="hover:text-white">Student Signup</Link>
               <Link to="/signup?type=college" className="hover:text-white">College Signup</Link>
-              <Link to="/signup?type=company" className="hover:text-white">Company Signup</Link>
-              <Link to="/about" className="hover:text-white">About Us</Link>
+              <Link to="/login" className="hover:text-white">Login</Link>
             </nav>
           </div>
 

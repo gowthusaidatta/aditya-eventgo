@@ -121,6 +121,9 @@ export default function Login() {
               Sign up
             </Link>
           </p>
+          <Link to="/admin-login" className="text-sm text-white/40 hover:text-white/60">
+            Admin Login →
+          </Link>
           <Link to="/" className="text-sm text-white/40 hover:text-white/60">
             ← Back to home
           </Link>

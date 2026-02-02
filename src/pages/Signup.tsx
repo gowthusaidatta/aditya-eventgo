@@ -10,10 +10,10 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { signUp, CollegeRole } from "@/lib/auth";
-import { Eye, EyeOff, GraduationCap, Building2, Briefcase } from "lucide-react";
+import { Eye, EyeOff, GraduationCap, Building2 } from "lucide-react";
 import eventgoLogo from "@/assets/eventgo-logo.png";
 
-type SignupUserType = "student" | "college" | "company";
+type SignupUserType = "student" | "college";
 
 const signupSchema = z.object({
   fullName: z.string().min(2, "Name must be at least 2 characters"),
@@ -24,14 +24,15 @@ const signupSchema = z.object({
     .regex(/[0-9]/, "Password must contain at least one number"),
   confirmPassword: z.string(),
   phone: z.string().optional(),
-  userType: z.enum(["student", "college", "company"]),
+  userType: z.enum(["student", "college"]),
   // Student fields
   collegeName: z.string().optional(),
   graduationYear: z.string().optional(),
+  rollNumber: z.string().optional(),
+  branch: z.string().optional(),
   // College fields
   collegeRole: z.enum(["principal", "dean", "staff_coordinator", "student_coordinator"]).optional(),
-  // Company fields
-  organizationName: z.string().optional(),
+  collegeId: z.string().optional(),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
   path: ["confirmPassword"],
@@ -44,6 +45,22 @@ const signupSchema = z.object({
   message: "College name is required",
   path: ["collegeName"],
 }).refine((data) => {
+  if (data.userType === "student") {
+    return data.rollNumber && data.rollNumber.length >= 1;
+  }
+  return true;
+}, {
+  message: "Roll number is required",
+  path: ["rollNumber"],
+}).refine((data) => {
+  if (data.userType === "student") {
+    return data.branch && data.branch.length >= 2;
+  }
+  return true;
+}, {
+  message: "Branch is required",
+  path: ["branch"],
+}).refine((data) => {
   if (data.userType === "college") {
     return data.collegeRole;
   }
@@ -52,13 +69,13 @@ const signupSchema = z.object({
   message: "Please select your role",
   path: ["collegeRole"],
 }).refine((data) => {
-  if (data.userType === "company") {
-    return data.organizationName && data.organizationName.length >= 2;
+  if (data.userType === "college") {
+    return data.collegeId && data.collegeId.length >= 1;
   }
   return true;
 }, {
-  message: "Organization name is required",
-  path: ["organizationName"],
+  message: "College ID is required",
+  path: ["collegeId"],
 });
 
 type SignupFormData = z.infer<typeof signupSchema>;
@@ -67,17 +84,12 @@ const userTypeInfo: Record<SignupUserType, { icon: typeof GraduationCap; title: 
   student: {
     icon: GraduationCap,
     title: "Student",
-    description: "Browse events and find opportunities",
+    description: "Browse events and hackathons",
   },
   college: {
     icon: Building2,
     title: "College Staff",
-    description: "Manage college events and registrations",
-  },
-  company: {
-    icon: Briefcase,
-    title: "Company",
-    description: "Post jobs and recruit talent",
+    description: "Manage college events",
   },
 };
 
@@ -100,8 +112,10 @@ export default function Signup() {
       userType: initialType,
       collegeName: "",
       graduationYear: "",
+      rollNumber: "",
+      branch: "",
       collegeRole: undefined,
-      organizationName: "",
+      collegeId: "",
     },
   });
 
@@ -119,12 +133,16 @@ export default function Signup() {
         collegeName: data.collegeName || undefined,
         graduationYear: data.graduationYear ? parseInt(data.graduationYear) : undefined,
         collegeRole: data.collegeRole as CollegeRole | undefined,
-        organizationName: data.organizationName || undefined,
+        rollNumber: data.rollNumber || undefined,
+        branch: data.branch || undefined,
+        collegeId: data.collegeId || undefined,
       });
 
       toast({
         title: "Account created!",
-        description: "Please check your email to verify your account.",
+        description: userType === "college" 
+          ? "Your account is pending verification. You'll be notified once verified." 
+          : "Please check your email to verify your account.",
       });
 
       navigate("/login");
@@ -153,7 +171,7 @@ export default function Signup() {
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               {/* User Type Selection */}
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 {(Object.keys(userTypeInfo) as SignupUserType[]).map((type) => {
                   const info = userTypeInfo[type];
                   const Icon = info.icon;
@@ -219,9 +237,22 @@ export default function Signup() {
                 )}
               />
 
-              {/* Conditional Fields based on User Type */}
+              {/* Student Fields */}
               {userType === "student" && (
                 <>
+                  <FormField
+                    control={form.control}
+                    name="rollNumber"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-white/80">Roll Number</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Enter your roll number" className="border-white/20 bg-white/10 text-white placeholder:text-white/40" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                   <FormField
                     control={form.control}
                     name="collegeName"
@@ -230,6 +261,19 @@ export default function Signup() {
                         <FormLabel className="text-white/80">College Name</FormLabel>
                         <FormControl>
                           <Input placeholder="Enter your college name" className="border-white/20 bg-white/10 text-white placeholder:text-white/40" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="branch"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-white/80">Branch</FormLabel>
+                        <FormControl>
+                          <Input placeholder="e.g., Computer Science" className="border-white/20 bg-white/10 text-white placeholder:text-white/40" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -262,8 +306,22 @@ export default function Signup() {
                 </>
               )}
 
+              {/* College Staff Fields */}
               {userType === "college" && (
                 <>
+                  <FormField
+                    control={form.control}
+                    name="collegeId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-white/80">College ID Number</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Enter your college ID" className="border-white/20 bg-white/10 text-white placeholder:text-white/40" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                   <FormField
                     control={form.control}
                     name="collegeName"
@@ -301,22 +359,6 @@ export default function Signup() {
                     )}
                   />
                 </>
-              )}
-
-              {userType === "company" && (
-                <FormField
-                  control={form.control}
-                  name="organizationName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-white/80">Organization Name</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Enter your organization name" className="border-white/20 bg-white/10 text-white placeholder:text-white/40" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
               )}
 
               <FormField
