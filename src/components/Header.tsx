@@ -148,6 +148,9 @@ export function Header() {
                     <Button variant="outline" className="border-white/20 text-white hover:bg-white/10" onClick={() => { navigate(getDashboardPath()); setMobileMenuOpen(false); }}>
                       Dashboard
                     </Button>
+                    <Button variant="outline" className="border-white/20 text-white hover:bg-white/10" onClick={() => { navigate("/profile"); setMobileMenuOpen(false); }}>
+                      Profile
+                    </Button>
                     <Button variant="ghost" className="text-white hover:bg-white/10" onClick={handleSignOut}>
                       Sign Out
                     </Button>
