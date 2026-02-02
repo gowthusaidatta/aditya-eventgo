@@ -1,6 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 
-export type UserType = "student" | "college" | "company" | "admin";
+export type UserType = "student" | "college" | "admin";
 export type CollegeRole = "principal" | "dean" | "staff_coordinator" | "student_coordinator";
 
 export interface SignupData {
@@ -12,14 +12,15 @@ export interface SignupData {
   // Student fields
   collegeName?: string;
   graduationYear?: number;
+  rollNumber?: string;
+  branch?: string;
   // College fields
   collegeRole?: CollegeRole;
-  // Company fields
-  organizationName?: string;
+  collegeId?: string;
 }
 
 export async function signUp(data: SignupData) {
-  const { email, password, fullName, userType, phone, collegeName, graduationYear, collegeRole, organizationName } = data;
+  const { email, password, fullName, userType, phone, collegeName, graduationYear, collegeRole, rollNumber, branch, collegeId } = data;
 
   // Create the auth user
   const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -42,7 +43,10 @@ export async function signUp(data: SignupData) {
     user_type: userType,
     college_name: collegeName,
     graduation_year: graduationYear,
-    organization_name: organizationName,
+    roll_number: rollNumber,
+    branch,
+    college_id: collegeId,
+    is_verified: false, // All new users start unverified
   });
 
   if (profileError) throw profileError;

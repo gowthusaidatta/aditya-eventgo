@@ -16,7 +16,7 @@ export function CTASection() {
             Ready to Get Started?
           </h2>
           <p className="mb-8 text-lg opacity-90">
-            Join thousands of students, colleges, and companies already using EventGo to connect, learn, and grow.
+            Join thousands of students and colleges already using EventGo to connect, learn, and grow.
           </p>
           <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
             <Button
@@ -35,14 +35,6 @@ export function CTASection() {
               className="border-white/20 bg-transparent text-white hover:bg-white/10"
             >
               Sign Up as College
-            </Button>
-            <Button
-              size="lg"
-              variant="outline"
-              onClick={() => navigate("/signup?type=company")}
-              className="border-white/20 bg-transparent text-white hover:bg-white/10"
-            >
-              Sign Up as Company
             </Button>
           </div>
         </div>

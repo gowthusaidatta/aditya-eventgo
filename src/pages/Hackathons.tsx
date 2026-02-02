@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Calendar, MapPin, Users, Search } from "lucide-react";
+import { Calendar, MapPin, Users, Search, Code } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -19,32 +18,22 @@ interface Event {
   description: string | null;
   event_type: string;
   start_date: string;
+  end_date: string | null;
   location: string | null;
   max_participants: number | null;
   image_url: string | null;
 }
 
-const eventTypeColors: Record<string, string> = {
-  conference: "bg-primary/10 text-primary",
-  hackathon: "bg-secondary text-secondary-foreground",
-  workshop: "bg-accent text-accent-foreground",
-  fair: "bg-muted text-muted-foreground",
-  fest: "bg-primary/10 text-primary",
-  seminar: "bg-secondary text-secondary-foreground",
-  competition: "bg-accent text-accent-foreground",
-};
-
-export default function Events() {
+export default function Hackathons() {
   const { user, profile } = useAuth();
   const { toast } = useToast();
-  const [events, setEvents] = useState<Event[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [typeFilter, setTypeFilter] = useState("all");
+  const [hackathons, setHackathons] = useState<Event[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [registering, setRegistering] = useState(false);
   
-  // Registration form
+  // Registration form state
   const [regForm, setRegForm] = useState({
     full_name: "",
     roll_number: "",
@@ -55,7 +44,7 @@ export default function Events() {
   });
 
   useEffect(() => {
-    fetchEvents();
+    fetchHackathons();
   }, []);
 
   useEffect(() => {
@@ -71,17 +60,17 @@ export default function Events() {
     }
   }, [profile]);
 
-  const fetchEvents = async () => {
+  const fetchHackathons = async () => {
     const { data, error } = await supabase
       .from("events")
       .select("*")
-      .neq("event_type", "hackathon")
+      .eq("event_type", "hackathon")
       .order("start_date", { ascending: true });
 
     if (error) {
-      console.error("Error fetching events:", error);
+      console.error("Error fetching hackathons:", error);
     } else {
-      setEvents(data || []);
+      setHackathons(data || []);
     }
     setLoading(false);
   };
@@ -90,7 +79,7 @@ export default function Events() {
     if (!user || !selectedEvent) {
       toast({
         title: "Please log in",
-        description: "You need to be logged in to register for events.",
+        description: "You need to be logged in to register for hackathons.",
         variant: "destructive",
       });
       return;
@@ -122,7 +111,7 @@ export default function Events() {
       if (error.code === "23505") {
         toast({
           title: "Already registered",
-          description: "You have already registered for this event.",
+          description: "You have already registered for this hackathon.",
           variant: "destructive",
         });
       } else {
@@ -142,113 +131,95 @@ export default function Events() {
     setRegistering(false);
   };
 
-  const filteredEvents = events.filter((event) => {
-    const matchesSearch = event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      event.description?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesType = typeFilter === "all" || event.event_type === typeFilter;
-    return matchesSearch && matchesType;
-  });
+  const filteredHackathons = hackathons.filter(h =>
+    h.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    h.description?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-background">
       <Header />
       <main className="container py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold">Explore Events</h1>
-          <p className="mt-2 text-muted-foreground">Discover workshops, seminars, fests, and more</p>
+          <h1 className="text-3xl font-bold">Hackathons</h1>
+          <p className="mt-2 text-muted-foreground">
+            Participate in exciting hackathons and showcase your skills
+          </p>
         </div>
 
-        {/* Filters */}
-        <div className="mb-8 flex flex-col gap-4 sm:flex-row">
-          <div className="relative flex-1">
+        {/* Search */}
+        <div className="mb-8">
+          <div className="relative max-w-md">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Search events..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
+              placeholder="Search hackathons..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9"
             />
           </div>
-          <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger className="w-full sm:w-48">
-              <SelectValue placeholder="Event Type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Types</SelectItem>
-              <SelectItem value="workshop">Workshop</SelectItem>
-              <SelectItem value="seminar">Seminar</SelectItem>
-              <SelectItem value="conference">Conference</SelectItem>
-              <SelectItem value="fest">Fest</SelectItem>
-              <SelectItem value="fair">Fair</SelectItem>
-              <SelectItem value="competition">Competition</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
 
-        {/* Events Grid */}
+        {/* Hackathons Grid */}
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
           </div>
-        ) : filteredEvents.length === 0 ? (
+        ) : filteredHackathons.length === 0 ? (
           <div className="py-12 text-center">
-            <Calendar className="mx-auto h-12 w-12 text-muted-foreground" />
-            <h3 className="mt-4 text-lg font-medium">No events found</h3>
-            <p className="text-muted-foreground">Check back later for upcoming events.</p>
+            <Code className="mx-auto h-12 w-12 text-muted-foreground" />
+            <h3 className="mt-4 text-lg font-medium">No hackathons found</h3>
+            <p className="text-muted-foreground">Check back later for upcoming hackathons.</p>
           </div>
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {filteredEvents.map((event) => (
-              <Card key={event.id} className="overflow-hidden transition-shadow hover:shadow-lg">
+            {filteredHackathons.map((hackathon) => (
+              <Card key={hackathon.id} className="overflow-hidden transition-shadow hover:shadow-lg">
                 <div className="aspect-video bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
-                  <Calendar className="h-16 w-16 text-primary/50" />
+                  <Code className="h-16 w-16 text-primary/50" />
                 </div>
                 <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <Badge className={eventTypeColors[event.event_type] || "bg-muted"}>
-                      {event.event_type}
-                    </Badge>
-                  </div>
-                  <h3 className="line-clamp-1 text-lg font-semibold">{event.title}</h3>
-                  {event.description && (
-                    <p className="line-clamp-2 text-sm text-muted-foreground">{event.description}</p>
-                  )}
+                  <Badge className="w-fit bg-primary/10 text-primary">Hackathon</Badge>
+                  <h3 className="text-lg font-semibold">{hackathon.title}</h3>
                 </CardHeader>
                 <CardContent className="space-y-2 pb-2">
+                  {hackathon.description && (
+                    <p className="line-clamp-2 text-sm text-muted-foreground">{hackathon.description}</p>
+                  )}
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Calendar className="h-4 w-4" />
-                    <span>{new Date(event.start_date).toLocaleDateString("en-IN", { weekday: "short", month: "short", day: "numeric" })}</span>
+                    <span>{new Date(hackathon.start_date).toLocaleDateString("en-IN", { weekday: "short", month: "short", day: "numeric" })}</span>
                   </div>
-                  {event.location && (
+                  {hackathon.location && (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <MapPin className="h-4 w-4" />
-                      <span>{event.location}</span>
+                      <span>{hackathon.location}</span>
                     </div>
                   )}
-                  {event.max_participants && (
+                  {hackathon.max_participants && (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Users className="h-4 w-4" />
-                      <span>{event.max_participants} spots</span>
+                      <span>Max {hackathon.max_participants} participants</span>
                     </div>
                   )}
                 </CardContent>
                 <CardFooter>
                   <Dialog>
                     <DialogTrigger asChild>
-                      <Button className="w-full" onClick={() => setSelectedEvent(event)}>
+                      <Button className="w-full" onClick={() => setSelectedEvent(hackathon)}>
                         Register Now
                       </Button>
                     </DialogTrigger>
                     <DialogContent className="max-w-md">
                       <DialogHeader>
-                        <DialogTitle>Register for {event.title}</DialogTitle>
+                        <DialogTitle>Register for {hackathon.title}</DialogTitle>
                         <DialogDescription>
-                          Fill in your details to register for this event.
+                          Fill in your details to register for this hackathon.
                         </DialogDescription>
                       </DialogHeader>
                       {!user ? (
                         <div className="py-4 text-center">
-                          <p className="text-muted-foreground">Please log in to register for events.</p>
+                          <p className="text-muted-foreground">Please log in to register for hackathons.</p>
                           <Button className="mt-4" onClick={() => window.location.href = "/login"}>
                             Log In
                           </Button>

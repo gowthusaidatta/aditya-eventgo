@@ -13,7 +13,10 @@ interface Profile {
   user_type: UserType;
   college_name: string | null;
   graduation_year: number | null;
-  organization_name: string | null;
+  roll_number: string | null;
+  branch: string | null;
+  college_id: string | null;
+  is_verified: boolean;
 }
 
 interface AuthContextType {
