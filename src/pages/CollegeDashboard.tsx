@@ -150,6 +150,9 @@ export default function CollegeDashboard() {
   };
 
   const handleVerifyUser = async (userId: string, verify: boolean) => {
+    // Find the user being verified
+    const targetUser = collegeUsers.find(u => u.user_id === userId);
+    
     const { error } = await supabase
       .from("profiles")
       .update({ is_verified: verify })
@@ -162,6 +165,27 @@ export default function CollegeDashboard() {
         variant: "destructive",
       });
       return;
+    }
+    
+    // Send verification email if verifying (not unverifying)
+    if (verify && targetUser) {
+      try {
+        const response = await supabase.functions.invoke("send-verification-email", {
+          body: {
+            email: targetUser.email,
+            fullName: targetUser.full_name,
+            verifiedBy: profile?.full_name || "Principal",
+            userType: "college",
+            role: getUserRole(targetUser.user_id),
+          },
+        });
+        
+        if (response.error) {
+          console.error("Failed to send verification email:", response.error);
+        }
+      } catch (emailError) {
+        console.error("Error sending verification email:", emailError);
+      }
     }
     
     toast({
