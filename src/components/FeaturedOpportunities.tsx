@@ -1,7 +1,7 @@
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Building2, MapPin, Clock, IndianRupee } from "lucide-react";
+import { Building2, MapPin, Clock, IndianRupee, ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 // Mock data for now
@@ -46,23 +46,24 @@ const featuredOpportunities = [
 
 const typeColors: Record<string, string> = {
   job: "bg-primary/10 text-primary",
-  internship: "bg-secondary/10 text-secondary",
-  hackathon: "bg-accent/10 text-accent",
+  internship: "bg-accent/10 text-accent",
+  hackathon: "bg-secondary text-secondary-foreground",
 };
 
 export function FeaturedOpportunities() {
   const navigate = useNavigate();
 
   return (
-    <section className="py-16 md:py-24">
+    <section className="bg-muted/30 py-16 md:py-24">
       <div className="container">
-        <div className="mb-12 flex items-center justify-between">
+        <div className="mb-8 flex items-center justify-between">
           <div>
-            <h2 className="text-3xl font-bold">Featured Opportunities</h2>
-            <p className="mt-2 text-muted-foreground">Jobs, internships, and hackathons for your career</p>
+            <h2 className="text-2xl font-bold md:text-3xl">Opportunities</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Jobs, internships & hackathons for you</p>
           </div>
-          <Button variant="outline" onClick={() => navigate("/opportunities")}>
+          <Button variant="ghost" onClick={() => navigate("/opportunities")} className="gap-1 text-primary hover:text-primary">
             View All
+            <ArrowRight className="h-4 w-4" />
           </Button>
         </div>
 
@@ -90,7 +91,7 @@ export function FeaturedOpportunities() {
                 </div>
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Clock className="h-4 w-4" />
-                  <span>Deadline: {new Date(opportunity.deadline).toLocaleDateString()}</span>
+                  <span>Deadline: {new Date(opportunity.deadline).toLocaleDateString("en-IN", { month: "short", day: "numeric" })}</span>
                 </div>
               </CardContent>
               <CardFooter>

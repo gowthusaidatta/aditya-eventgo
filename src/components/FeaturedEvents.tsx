@@ -1,124 +1,108 @@
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, MapPin, Users } from "lucide-react";
+import { Calendar, MapPin } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "@/components/ui/carousel";
+import { ArrowRight } from "lucide-react";
 
 // Mock data for now - will be replaced with real data
 const featuredEvents = [
   {
     id: "1",
-    title: "Tech Innovation Summit 2026",
-    description: "Join industry leaders for a day of innovation and networking.",
-    event_type: "conference",
-    location: "Aditya University Campus",
-    start_date: "2026-03-15",
-    max_participants: 500,
+    title: "TechFest 2026 - Annual Technical Festival",
+    description: "Join the biggest tech fest with coding competitions, robotics, and more.",
+    event_type: "Tech",
+    tags: ["Tech", "Coding"],
+    location: "Mumbai",
+    start_date: "2026-02-15",
     image_url: "https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=600",
+    is_live: true,
   },
   {
     id: "2",
-    title: "Hackathon 2026",
-    description: "48 hours of coding, creativity, and competition.",
-    event_type: "hackathon",
-    location: "Virtual Event",
-    start_date: "2026-04-01",
-    max_participants: 200,
-    image_url: "https://images.unsplash.com/photo-1504384764586-bb4cdc1707b0?w=600",
+    title: "Innovate 2026 - Startup Summit",
+    description: "Connect with investors, pitch your ideas, and learn from entrepreneurs.",
+    event_type: "Startup",
+    tags: ["Startup", "Innovation"],
+    location: "Bangalore",
+    start_date: "2026-03-01",
+    image_url: "https://images.unsplash.com/photo-1515187029135-18ee286d815b?w=600",
+    is_live: false,
   },
   {
     id: "3",
-    title: "Career Fair Spring 2026",
-    description: "Meet top recruiters and explore job opportunities.",
-    event_type: "fair",
-    location: "Main Auditorium",
-    start_date: "2026-03-25",
-    max_participants: 1000,
-    image_url: "https://images.unsplash.com/photo-1515187029135-18ee286d815b?w=600",
-  },
-  {
-    id: "4",
-    title: "Workshop: AI & Machine Learning",
-    description: "Hands-on workshop on building ML models.",
-    event_type: "workshop",
-    location: "Computer Lab 3",
-    start_date: "2026-02-20",
-    max_participants: 50,
-    image_url: "https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=600",
+    title: "Cultural Night - Euphoria 2026",
+    description: "Experience music, dance, drama, and art at the biggest cultural extravaganza.",
+    event_type: "Cultural",
+    tags: ["Cultural", "Music"],
+    location: "Delhi",
+    start_date: "2026-02-22",
+    image_url: "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=600",
+    is_live: false,
   },
 ];
-
-const eventTypeColors: Record<string, string> = {
-  conference: "bg-primary/10 text-primary",
-  hackathon: "bg-secondary/10 text-secondary",
-  workshop: "bg-accent/10 text-accent",
-  fair: "bg-muted text-muted-foreground",
-};
 
 export function FeaturedEvents() {
   const navigate = useNavigate();
 
   return (
-    <section className="bg-muted/30 py-16 md:py-24">
+    <section className="bg-background py-16 md:py-24">
       <div className="container">
-        <div className="mb-12 flex items-center justify-between">
+        <div className="mb-8 flex items-center justify-between">
           <div>
-            <h2 className="text-3xl font-bold">Featured Events</h2>
-            <p className="mt-2 text-muted-foreground">Discover upcoming events from colleges and organizations</p>
+            <h2 className="text-2xl font-bold md:text-3xl">Featured Events</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Discover trending events from top colleges</p>
           </div>
-          <Button variant="outline" onClick={() => navigate("/events")}>
+          <Button variant="ghost" onClick={() => navigate("/events")} className="gap-1 text-primary hover:text-primary">
             View All
+            <ArrowRight className="h-4 w-4" />
           </Button>
         </div>
 
-        <Carousel opts={{ align: "start" }} className="w-full">
-          <CarouselContent className="-ml-4">
-            {featuredEvents.map((event) => (
-              <CarouselItem key={event.id} className="pl-4 md:basis-1/2 lg:basis-1/3">
-                <Card className="overflow-hidden transition-shadow hover:shadow-lg">
-                  <div className="aspect-video overflow-hidden">
-                    <img
-                      src={event.image_url}
-                      alt={event.title}
-                      className="h-full w-full object-cover transition-transform hover:scale-105"
-                    />
-                  </div>
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <Badge className={eventTypeColors[event.event_type] || "bg-muted"}>
-                        {event.event_type}
-                      </Badge>
-                    </div>
-                    <h3 className="line-clamp-1 text-lg font-semibold">{event.title}</h3>
-                    <p className="line-clamp-2 text-sm text-muted-foreground">{event.description}</p>
-                  </CardHeader>
-                  <CardContent className="space-y-2 pb-2">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Calendar className="h-4 w-4" />
-                      <span>{new Date(event.start_date).toLocaleDateString()}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <MapPin className="h-4 w-4" />
-                      <span>{event.location}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Users className="h-4 w-4" />
-                      <span>{event.max_participants} spots</span>
-                    </div>
-                  </CardContent>
-                  <CardFooter>
-                    <Button className="w-full" onClick={() => navigate(`/events/${event.id}`)}>
-                      Learn More
-                    </Button>
-                  </CardFooter>
-                </Card>
-              </CarouselItem>
-            ))}
-          </CarouselContent>
-          <CarouselPrevious className="hidden md:flex" />
-          <CarouselNext className="hidden md:flex" />
-        </Carousel>
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {featuredEvents.map((event) => (
+            <Card key={event.id} className="group overflow-hidden border-border/50 transition-all hover:shadow-lg">
+              <div className="relative aspect-video overflow-hidden">
+                <img
+                  src={event.image_url}
+                  alt={event.title}
+                  className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                />
+                {event.is_live && (
+                  <Badge className="absolute right-3 top-3 bg-destructive">
+                    Live
+                  </Badge>
+                )}
+              </div>
+              <CardHeader className="pb-2">
+                <div className="mb-2 flex flex-wrap gap-1">
+                  {event.tags.map((tag) => (
+                    <Badge key={tag} variant="secondary" className="text-xs">
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+                <h3 className="line-clamp-1 text-lg font-semibold">{event.title}</h3>
+                <p className="line-clamp-2 text-sm text-muted-foreground">{event.description}</p>
+              </CardHeader>
+              <CardContent className="space-y-2 pb-2">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Calendar className="h-4 w-4 text-primary" />
+                  <span>{new Date(event.start_date).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" })}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <MapPin className="h-4 w-4 text-primary" />
+                  <span>{event.location}</span>
+                </div>
+              </CardContent>
+              <CardFooter>
+                <Button className="w-full" onClick={() => navigate(`/events/${event.id}`)}>
+                  View Details
+                </Button>
+              </CardFooter>
+            </Card>
+          ))}
+        </div>
       </div>
     </section>
   );

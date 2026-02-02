@@ -1,60 +1,58 @@
 import { Link } from "react-router-dom";
+import eventgoLogo from "@/assets/eventgo-logo.png";
+import adityaLogo from "@/assets/aditya-university-logo.jpg";
 
 export function Footer() {
   return (
-    <footer className="border-t bg-muted/50">
+    <footer className="border-t bg-secondary text-white">
       <div className="container py-12">
         <div className="grid gap-8 md:grid-cols-4">
           {/* Brand */}
           <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-                <span className="text-base font-bold text-primary-foreground">E</span>
-              </div>
-              <span className="text-lg font-bold">EventGo</span>
-            </div>
-            <p className="text-sm text-muted-foreground">
+            <img src={eventgoLogo} alt="EventGo" className="h-10 w-auto" />
+            <p className="text-sm text-white/60">
               Connecting colleges, students, and companies through events and opportunities.
             </p>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <span>In collaboration with</span>
-              <span className="font-semibold text-foreground">Aditya University</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-white/60">In collaboration with</span>
+              <img src={adityaLogo} alt="Aditya University" className="h-6 w-auto" />
             </div>
           </div>
 
           {/* Quick Links */}
           <div className="space-y-4">
             <h4 className="font-semibold">Quick Links</h4>
-            <nav className="flex flex-col gap-2 text-sm text-muted-foreground">
-              <Link to="/events" className="hover:text-foreground">Events</Link>
-              <Link to="/opportunities" className="hover:text-foreground">Opportunities</Link>
-              <Link to="/about" className="hover:text-foreground">About Us</Link>
-              <Link to="/contact" className="hover:text-foreground">Contact</Link>
+            <nav className="flex flex-col gap-2 text-sm text-white/60">
+              <Link to="/events" className="hover:text-white">Events</Link>
+              <Link to="/hackathons" className="hover:text-white">Hackathons</Link>
+              <Link to="/opportunities" className="hover:text-white">Jobs</Link>
+              <Link to="/internships" className="hover:text-white">Internships</Link>
             </nav>
           </div>
 
           {/* For Users */}
           <div className="space-y-4">
             <h4 className="font-semibold">For Users</h4>
-            <nav className="flex flex-col gap-2 text-sm text-muted-foreground">
-              <Link to="/signup?type=student" className="hover:text-foreground">Student Signup</Link>
-              <Link to="/signup?type=college" className="hover:text-foreground">College Signup</Link>
-              <Link to="/signup?type=company" className="hover:text-foreground">Company Signup</Link>
+            <nav className="flex flex-col gap-2 text-sm text-white/60">
+              <Link to="/signup?type=student" className="hover:text-white">Student Signup</Link>
+              <Link to="/signup?type=college" className="hover:text-white">College Signup</Link>
+              <Link to="/signup?type=company" className="hover:text-white">Company Signup</Link>
+              <Link to="/about" className="hover:text-white">About Us</Link>
             </nav>
           </div>
 
           {/* Contact */}
           <div className="space-y-4">
             <h4 className="font-semibold">Contact</h4>
-            <div className="flex flex-col gap-2 text-sm text-muted-foreground">
-              <p>support@eventgo.com</p>
+            <div className="flex flex-col gap-2 text-sm text-white/60">
+              <p>support@eventgo.tech</p>
               <p>Aditya University Campus</p>
               <p>Andhra Pradesh, India</p>
             </div>
           </div>
         </div>
 
-        <div className="mt-8 border-t pt-8 text-center text-sm text-muted-foreground">
+        <div className="mt-8 border-t border-white/10 pt-8 text-center text-sm text-white/60">
           <p>© {new Date().getFullYear()} EventGo. All rights reserved.</p>
         </div>
       </div>
