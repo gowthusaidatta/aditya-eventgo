@@ -133,6 +133,9 @@ export default function AdminDashboard() {
   };
 
   const handleVerifyUser = async (userId: string, isVerified: boolean) => {
+    // Find the user being verified
+    const targetUser = users.find(u => u.user_id === userId);
+    
     const { error } = await supabase
       .from("profiles")
       .update({ is_verified: isVerified })
@@ -145,6 +148,27 @@ export default function AdminDashboard() {
         variant: "destructive",
       });
       return;
+    }
+    
+    // Send verification email if verifying (not unverifying)
+    if (isVerified && targetUser) {
+      try {
+        const response = await supabase.functions.invoke("send-verification-email", {
+          body: {
+            email: targetUser.email,
+            fullName: targetUser.full_name,
+            verifiedBy: profile?.full_name || "Admin",
+            userType: targetUser.user_type,
+            role: getUserRole(targetUser.user_id),
+          },
+        });
+        
+        if (response.error) {
+          console.error("Failed to send verification email:", response.error);
+        }
+      } catch (emailError) {
+        console.error("Error sending verification email:", emailError);
+      }
     }
     
     toast({

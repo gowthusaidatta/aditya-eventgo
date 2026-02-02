@@ -5,9 +5,21 @@ import { Footer } from "@/components/Footer";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, Code, GraduationCap } from "lucide-react";
+import { Calendar, Code, GraduationCap, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface Registration {
   id: string;
@@ -36,8 +48,10 @@ interface HackathonRegistration {
 export default function StudentDashboard() {
   const { user, profile, loading } = useAuth();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [registrations, setRegistrations] = useState<Registration[]>([]);
   const [hackathonRegs, setHackathonRegs] = useState<HackathonRegistration[]>([]);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && (!user || profile?.user_type !== "student")) {
@@ -71,6 +85,31 @@ export default function StudentDashboard() {
 
     setRegistrations(eventRegs || []);
     setHackathonRegs(hackRegs || []);
+  };
+
+  const handleCancelRegistration = async (registrationId: string, type: "event" | "hackathon", eventTitle: string) => {
+    setCancellingId(registrationId);
+    
+    const table = type === "hackathon" ? "hackathon_registrations" : "event_registrations";
+    const { error } = await supabase
+      .from(table)
+      .delete()
+      .eq("id", registrationId);
+
+    if (error) {
+      toast({
+        title: "Error",
+        description: "Failed to cancel registration. Please try again.",
+        variant: "destructive",
+      });
+    } else {
+      toast({
+        title: "Registration Cancelled",
+        description: `Your registration for "${eventTitle}" has been cancelled.`,
+      });
+      fetchRegistrations();
+    }
+    setCancellingId(null);
   };
 
   if (loading) {
@@ -156,7 +195,7 @@ export default function StudentDashboard() {
               ) : (
                 upcomingEvents.slice(0, 5).map((reg) => (
                   <div key={reg.id} className="flex items-center justify-between rounded-lg border p-4">
-                    <div>
+                    <div className="flex-1">
                       <p className="font-medium">{reg.events?.title}</p>
                       <p className="text-sm text-muted-foreground">
                         {reg.events && new Date(reg.events.start_date).toLocaleDateString("en-IN", {
@@ -170,7 +209,35 @@ export default function StudentDashboard() {
                       <Badge variant={reg.type === "hackathon" ? "default" : "secondary"}>
                         {reg.events?.event_type}
                       </Badge>
-                      <Badge variant="outline">{reg.status || "Registered"}</Badge>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-8 w-8 text-destructive hover:bg-destructive/10"
+                            disabled={cancellingId === reg.id}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Cancel Registration?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Are you sure you want to cancel your registration for "{reg.events?.title}"? This action cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Keep Registration</AlertDialogCancel>
+                            <AlertDialogAction 
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              onClick={() => handleCancelRegistration(reg.id, reg.type, reg.events?.title || "")}
+                            >
+                              Cancel Registration
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
                   </div>
                 ))
@@ -198,23 +265,55 @@ export default function StudentDashboard() {
                   You haven't registered for any events yet.
                 </div>
               ) : (
-                allRegistrations.slice(0, 5).map((reg) => (
-                  <div key={reg.id} className="flex items-center justify-between rounded-lg border p-4">
-                    <div>
-                      <p className="font-medium">{reg.events?.title}</p>
-                      <p className="text-sm text-muted-foreground">
-                        Registered on {new Date(reg.registered_at).toLocaleDateString()}
-                      </p>
+                allRegistrations.slice(0, 5).map((reg) => {
+                  const isUpcoming = reg.events && new Date(reg.events.start_date) > new Date();
+                  return (
+                    <div key={reg.id} className="flex items-center justify-between rounded-lg border p-4">
+                      <div className="flex-1">
+                        <p className="font-medium">{reg.events?.title}</p>
+                        <p className="text-sm text-muted-foreground">
+                          Registered on {new Date(reg.registered_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={isUpcoming ? "default" : "secondary"}>
+                          {isUpcoming ? "Upcoming" : "Completed"}
+                        </Badge>
+                        {isUpcoming && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-8 w-8 text-destructive hover:bg-destructive/10"
+                                disabled={cancellingId === reg.id}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Cancel Registration?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Are you sure you want to cancel your registration for "{reg.events?.title}"? This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Keep Registration</AlertDialogCancel>
+                                <AlertDialogAction 
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  onClick={() => handleCancelRegistration(reg.id, reg.type, reg.events?.title || "")}
+                                >
+                                  Cancel Registration
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
+                      </div>
                     </div>
-                    <Badge variant={
-                      reg.events && new Date(reg.events.start_date) > new Date() 
-                        ? "default" 
-                        : "secondary"
-                    }>
-                      {reg.events && new Date(reg.events.start_date) > new Date() ? "Upcoming" : "Completed"}
-                    </Badge>
-                  </div>
-                ))
+                  );
+                })
               )}
             </CardContent>
           </Card>
