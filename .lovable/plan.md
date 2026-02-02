@@ -2,7 +2,7 @@
 
 # EventGo - Aditya University Collaboration
 
-An event management platform for colleges, students, and companies to connect through events, hackathons, jobs, and internships.
+An event management platform for colleges and students to connect through events and hackathons.
 
 ---
 
@@ -11,7 +11,7 @@ An event management platform for colleges, students, and companies to connect th
 ### Dual Logo Header
 - Display both **EventGo** logo and **Aditya University** logo in the header
 - Logos appear side-by-side with "in collaboration with" text
-- Professional styling that works on both light and dark backgrounds
+- Professional styling with dark navy theme
 
 ---
 
@@ -19,72 +19,73 @@ An event management platform for colleges, students, and companies to connect th
 
 ### Student Signup
 - Full name, email, password
-- College name, graduation year
+- Roll number, college name, branch, graduation year
 - Phone number (optional)
-- Access to browse events, register for opportunities
+- Access to browse events, register for hackathons
 
-### College Signup (New Role System)
+### College Signup (Role System)
 During college signup, user selects their role:
 
 | Role | Permissions |
 |------|-------------|
-| **Principal** | Full access: Create, edit, delete events • Manage all registrations • View analytics & reports |
-| **Dean** | Full access: Same as Principal |
+| **Principal** | Full access: Create, edit, delete events • Manage all registrations • View analytics • Verify other college users |
+| **Dean** | Full access: Same as Principal (except user verification) |
 | **Staff Coordinator** | Create events • Manage registrations • View all college events |
 | **Student Coordinator** | View-only access • See registrations only for events they're involved in |
 
-### Company Signup
-- Organization name, email, password
-- Post jobs, internships, and opportunities
+### Admin Account
+- Username: Datta
+- Email: Datta@gmail.com
+- Password: Datta@1235
+- To set up: Sign up with these credentials, then promote using database function
 
 ---
 
 ## 🏠 Core Features
 
 ### Landing Page
-- Hero section with both logos
+- Hero section with EventGo logo
+- Stats display (Events, Colleges, Hackathons, Students)
 - Featured events carousel
-- Featured opportunities (jobs, internships)
 - Call-to-action for signup
 
 ### Events System
 - Browse and discover events
-- Event details page with registration
-- Event categories (workshops, seminars, fests)
+- Event details with registration form
+- Event categories (workshops, seminars, fests, competitions)
+- Registration requires: full name, roll number, college, branch
 
-### Opportunities Hub
-- Jobs listings
-- Internships listings
-- Hackathons
+### Hackathons
+- Dedicated hackathons page
+- Registration with full details
 
 ### Dashboards
-- **Student Dashboard**: Registered events, saved opportunities
-- **College Dashboard**: Event management based on role permissions
-- **Admin Dashboard**: Platform-wide management
+- **Student Dashboard**: Registered events, hackathon registrations
+- **College Dashboard**: Event management based on role permissions, user verification (Principal only)
+- **Admin Dashboard**: Full user management, event management, verification control
 
 ---
 
-## 🗄️ Backend (Supabase)
+## 🗄️ Backend (Lovable Cloud)
 
 ### Database Structure
-- User profiles with role information
-- Separate `user_roles` table for college roles (Principal, Dean, Staff Coordinator, Student Coordinator)
-- Events table with college ownership
-- Registrations tracking
-- Opportunities (jobs, internships) tables
+- `profiles` table with roll_number, college_id, branch, is_verified fields
+- `user_roles` table for college roles
+- `events` table with college ownership
+- `hackathon_registrations` for event/hackathon signups
+- ~~opportunities table~~ (removed - no jobs/internships)
 
 ### Security
 - Row Level Security (RLS) policies based on user roles
-- Role-based permissions enforced at database level
-- Secure authentication flow
+- Verification hierarchy: Admin → Principal → Other college roles
+- Only verified users can access dashboard features
 
 ---
 
 ## 📱 User Experience
 
-- Clean, modern design with Tailwind CSS
+- Clean, modern design with dark navy/orange theme
 - Responsive layout (mobile-friendly)
 - Toast notifications for actions
 - Password strength validation
-- Profile management with photo upload
-
+- Verification pending message for unverified users
