@@ -10,6 +10,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { useToast } from "@/hooks/use-toast";
 import { signIn } from "@/lib/auth";
 import { Eye, EyeOff } from "lucide-react";
+import eventgoLogo from "@/assets/eventgo-logo.png";
 
 const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -53,14 +54,14 @@ export default function Login() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
-      <Card className="w-full max-w-md">
+    <div className="flex min-h-screen items-center justify-center hero-section p-4">
+      <Card className="w-full max-w-md border-white/10 bg-white/5 backdrop-blur">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-primary">
-            <span className="text-xl font-bold text-primary-foreground">E</span>
+          <div className="mx-auto mb-4">
+            <img src={eventgoLogo} alt="EventGo" className="h-12 w-auto" />
           </div>
-          <CardTitle className="text-2xl">Welcome back</CardTitle>
-          <CardDescription>Log in to your EventGo account</CardDescription>
+          <CardTitle className="text-2xl text-white">Welcome back</CardTitle>
+          <CardDescription className="text-white/60">Log in to your EventGo account</CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
@@ -70,9 +71,9 @@ export default function Login() {
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Email</FormLabel>
+                    <FormLabel className="text-white/80">Email</FormLabel>
                     <FormControl>
-                      <Input type="email" placeholder="Enter your email" {...field} />
+                      <Input type="email" placeholder="Enter your email" className="border-white/20 bg-white/10 text-white placeholder:text-white/40" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -84,18 +85,19 @@ export default function Login() {
                 name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Password</FormLabel>
+                    <FormLabel className="text-white/80">Password</FormLabel>
                     <FormControl>
                       <div className="relative">
                         <Input
                           type={showPassword ? "text" : "password"}
                           placeholder="Enter your password"
+                          className="border-white/20 bg-white/10 text-white placeholder:text-white/40"
                           {...field}
                         />
                         <button
                           type="button"
                           onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-white/60"
                         >
                           {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </button>
@@ -113,12 +115,15 @@ export default function Login() {
           </Form>
         </CardContent>
         <CardFooter className="flex flex-col gap-4">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-white/60">
             Don't have an account?{" "}
             <Link to="/signup" className="font-medium text-primary hover:underline">
               Sign up
             </Link>
           </p>
+          <Link to="/" className="text-sm text-white/40 hover:text-white/60">
+            ← Back to home
+          </Link>
         </CardFooter>
       </Card>
     </div>

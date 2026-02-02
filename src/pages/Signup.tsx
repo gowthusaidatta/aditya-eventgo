@@ -9,8 +9,11 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { signUp, UserType, CollegeRole } from "@/lib/auth";
+import { signUp, CollegeRole } from "@/lib/auth";
 import { Eye, EyeOff, GraduationCap, Building2, Briefcase } from "lucide-react";
+import eventgoLogo from "@/assets/eventgo-logo.png";
+
+type SignupUserType = "student" | "college" | "company";
 
 const signupSchema = z.object({
   fullName: z.string().min(2, "Name must be at least 2 characters"),
@@ -59,8 +62,6 @@ const signupSchema = z.object({
 });
 
 type SignupFormData = z.infer<typeof signupSchema>;
-
-type SignupUserType = "student" | "college" | "company";
 
 const userTypeInfo: Record<SignupUserType, { icon: typeof GraduationCap; title: string; description: string }> = {
   student: {
@@ -113,7 +114,7 @@ export default function Signup() {
         email: data.email,
         password: data.password,
         fullName: data.fullName,
-        userType: data.userType as UserType,
+        userType: data.userType as SignupUserType,
         phone: data.phone || undefined,
         collegeName: data.collegeName || undefined,
         graduationYear: data.graduationYear ? parseInt(data.graduationYear) : undefined,
@@ -139,14 +140,14 @@ export default function Signup() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
-      <Card className="w-full max-w-md">
+    <div className="flex min-h-screen items-center justify-center hero-section p-4 py-8">
+      <Card className="w-full max-w-md border-white/10 bg-white/5 backdrop-blur">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-primary">
-            <span className="text-xl font-bold text-primary-foreground">E</span>
+          <div className="mx-auto mb-4">
+            <img src={eventgoLogo} alt="EventGo" className="h-12 w-auto" />
           </div>
-          <CardTitle className="text-2xl">Create your account</CardTitle>
-          <CardDescription>Join EventGo and start exploring</CardDescription>
+          <CardTitle className="text-2xl text-white">Create your account</CardTitle>
+          <CardDescription className="text-white/60">Join EventGo and start exploring</CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
@@ -163,12 +164,12 @@ export default function Signup() {
                       onClick={() => form.setValue("userType", type)}
                       className={`flex flex-col items-center gap-2 rounded-lg border p-3 transition-colors ${
                         userType === type
-                          ? "border-primary bg-primary/5"
-                          : "border-input hover:bg-muted"
+                          ? "border-primary bg-primary/20"
+                          : "border-white/20 hover:bg-white/10"
                       }`}
                     >
-                      <Icon className={`h-5 w-5 ${userType === type ? "text-primary" : "text-muted-foreground"}`} />
-                      <span className={`text-xs font-medium ${userType === type ? "text-primary" : "text-muted-foreground"}`}>
+                      <Icon className={`h-5 w-5 ${userType === type ? "text-primary" : "text-white/60"}`} />
+                      <span className={`text-xs font-medium ${userType === type ? "text-primary" : "text-white/60"}`}>
                         {info.title}
                       </span>
                     </button>
@@ -181,9 +182,9 @@ export default function Signup() {
                 name="fullName"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Full Name</FormLabel>
+                    <FormLabel className="text-white/80">Full Name</FormLabel>
                     <FormControl>
-                      <Input placeholder="Enter your full name" {...field} />
+                      <Input placeholder="Enter your full name" className="border-white/20 bg-white/10 text-white placeholder:text-white/40" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -195,9 +196,9 @@ export default function Signup() {
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Email</FormLabel>
+                    <FormLabel className="text-white/80">Email</FormLabel>
                     <FormControl>
-                      <Input type="email" placeholder="Enter your email" {...field} />
+                      <Input type="email" placeholder="Enter your email" className="border-white/20 bg-white/10 text-white placeholder:text-white/40" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -209,9 +210,9 @@ export default function Signup() {
                 name="phone"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Phone (Optional)</FormLabel>
+                    <FormLabel className="text-white/80">Phone (Optional)</FormLabel>
                     <FormControl>
-                      <Input placeholder="Enter your phone number" {...field} />
+                      <Input placeholder="Enter your phone number" className="border-white/20 bg-white/10 text-white placeholder:text-white/40" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -226,9 +227,9 @@ export default function Signup() {
                     name="collegeName"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>College Name</FormLabel>
+                        <FormLabel className="text-white/80">College Name</FormLabel>
                         <FormControl>
-                          <Input placeholder="Enter your college name" {...field} />
+                          <Input placeholder="Enter your college name" className="border-white/20 bg-white/10 text-white placeholder:text-white/40" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -239,10 +240,10 @@ export default function Signup() {
                     name="graduationYear"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Graduation Year</FormLabel>
+                        <FormLabel className="text-white/80">Graduation Year</FormLabel>
                         <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
-                            <SelectTrigger>
+                            <SelectTrigger className="border-white/20 bg-white/10 text-white">
                               <SelectValue placeholder="Select year" />
                             </SelectTrigger>
                           </FormControl>
@@ -268,9 +269,9 @@ export default function Signup() {
                     name="collegeName"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>College/University Name</FormLabel>
+                        <FormLabel className="text-white/80">College/University Name</FormLabel>
                         <FormControl>
-                          <Input placeholder="Enter college name" {...field} />
+                          <Input placeholder="Enter college name" className="border-white/20 bg-white/10 text-white placeholder:text-white/40" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -281,10 +282,10 @@ export default function Signup() {
                     name="collegeRole"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Your Role</FormLabel>
+                        <FormLabel className="text-white/80">Your Role</FormLabel>
                         <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
-                            <SelectTrigger>
+                            <SelectTrigger className="border-white/20 bg-white/10 text-white">
                               <SelectValue placeholder="Select your role" />
                             </SelectTrigger>
                           </FormControl>
@@ -308,9 +309,9 @@ export default function Signup() {
                   name="organizationName"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Organization Name</FormLabel>
+                      <FormLabel className="text-white/80">Organization Name</FormLabel>
                       <FormControl>
-                        <Input placeholder="Enter your organization name" {...field} />
+                        <Input placeholder="Enter your organization name" className="border-white/20 bg-white/10 text-white placeholder:text-white/40" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -323,18 +324,19 @@ export default function Signup() {
                 name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Password</FormLabel>
+                    <FormLabel className="text-white/80">Password</FormLabel>
                     <FormControl>
                       <div className="relative">
                         <Input
                           type={showPassword ? "text" : "password"}
                           placeholder="Create a password"
+                          className="border-white/20 bg-white/10 text-white placeholder:text-white/40"
                           {...field}
                         />
                         <button
                           type="button"
                           onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-white/60"
                         >
                           {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </button>
@@ -350,9 +352,9 @@ export default function Signup() {
                 name="confirmPassword"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Confirm Password</FormLabel>
+                    <FormLabel className="text-white/80">Confirm Password</FormLabel>
                     <FormControl>
-                      <Input type="password" placeholder="Confirm your password" {...field} />
+                      <Input type="password" placeholder="Confirm your password" className="border-white/20 bg-white/10 text-white placeholder:text-white/40" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -365,13 +367,16 @@ export default function Signup() {
             </form>
           </Form>
         </CardContent>
-        <CardFooter className="justify-center">
-          <p className="text-sm text-muted-foreground">
+        <CardFooter className="flex flex-col gap-4">
+          <p className="text-sm text-white/60">
             Already have an account?{" "}
             <Link to="/login" className="font-medium text-primary hover:underline">
               Log in
             </Link>
           </p>
+          <Link to="/" className="text-sm text-white/40 hover:text-white/60">
+            ← Back to home
+          </Link>
         </CardFooter>
       </Card>
     </div>

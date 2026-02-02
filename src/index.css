@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* EventGo Design System - Vibrant, Modern Event Platform */
+/* EventGo Design System - Dark Navy & Orange Theme (matching eventgo.tech) */
 
 @layer base {
   :root {
@@ -15,19 +15,19 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
 
-    /* Primary - Vibrant Orange/Coral for energy */
+    /* Primary - Orange/Coral accent */
     --primary: 24 95% 53%;
     --primary-foreground: 0 0% 100%;
 
-    /* Secondary - Deep Blue for trust */
-    --secondary: 217 91% 60%;
+    /* Secondary - Deep Navy Blue */
+    --secondary: 220 60% 20%;
     --secondary-foreground: 0 0% 100%;
 
     --muted: 210 40% 96%;
     --muted-foreground: 215 16% 47%;
 
-    /* Accent - Teal for freshness */
-    --accent: 172 66% 50%;
+    /* Accent - Teal/Cyan */
+    --accent: 186 100% 42%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 84% 60%;
@@ -39,10 +39,12 @@
 
     --radius: 0.75rem;
 
-    /* Custom gradients */
-    --gradient-primary: linear-gradient(135deg, hsl(24 95% 53%) 0%, hsl(36 100% 50%) 100%);
-    --gradient-secondary: linear-gradient(135deg, hsl(217 91% 60%) 0%, hsl(240 84% 60%) 100%);
-    --gradient-hero: linear-gradient(135deg, hsl(24 95% 53% / 0.1) 0%, hsl(217 91% 60% / 0.1) 100%);
+    /* Hero section dark navy */
+    --hero-bg: 220 50% 15%;
+    --hero-foreground: 0 0% 100%;
+
+    /* Gold for Aditya University */
+    --gold: 45 93% 47%;
 
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5% 26%;
@@ -55,41 +57,44 @@
   }
 
   .dark {
-    --background: 222 47% 6%;
+    --background: 220 50% 8%;
     --foreground: 210 40% 98%;
 
-    --card: 222 47% 8%;
+    --card: 220 50% 12%;
     --card-foreground: 210 40% 98%;
 
-    --popover: 222 47% 8%;
+    --popover: 220 50% 12%;
     --popover-foreground: 210 40% 98%;
 
     --primary: 24 95% 53%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 217 91% 60%;
+    --secondary: 220 60% 25%;
     --secondary-foreground: 0 0% 100%;
 
-    --muted: 217 33% 17%;
+    --muted: 220 50% 18%;
     --muted-foreground: 215 20% 65%;
 
-    --accent: 172 66% 50%;
+    --accent: 186 100% 42%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 63% 31%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 217 33% 17%;
-    --input: 217 33% 17%;
+    --border: 220 50% 20%;
+    --input: 220 50% 20%;
     --ring: 24 95% 53%;
 
-    --sidebar-background: 240 6% 10%;
+    --hero-bg: 220 50% 12%;
+    --hero-foreground: 0 0% 100%;
+
+    --sidebar-background: 220 50% 10%;
     --sidebar-foreground: 240 5% 96%;
     --sidebar-primary: 24 95% 53%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 4% 16%;
+    --sidebar-accent: 220 50% 15%;
     --sidebar-accent-foreground: 240 5% 96%;
-    --sidebar-border: 240 4% 16%;
+    --sidebar-border: 220 50% 15%;
     --sidebar-ring: 24 95% 53%;
   }
 }
@@ -107,21 +112,21 @@
 /* Custom utility classes */
 @layer utilities {
   .gradient-primary {
-    background: var(--gradient-primary);
-  }
-  
-  .gradient-secondary {
-    background: var(--gradient-secondary);
+    background: linear-gradient(135deg, hsl(24 95% 53%) 0%, hsl(36 100% 50%) 100%);
   }
   
   .gradient-hero {
-    background: var(--gradient-hero);
+    background: linear-gradient(180deg, hsl(220 50% 12%) 0%, hsl(220 50% 18%) 100%);
   }
   
   .text-gradient-primary {
-    background: var(--gradient-primary);
+    background: linear-gradient(135deg, hsl(24 95% 53%) 0%, hsl(36 100% 50%) 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
+  }
+
+  .hero-section {
+    background: linear-gradient(180deg, hsl(220 50% 12%) 0%, hsl(220 50% 18%) 100%);
   }
 }
