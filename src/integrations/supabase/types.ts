@@ -62,6 +62,7 @@ export type Database = {
           start_date: string
           title: string
           updated_at: string
+          video_url: string | null
         }
         Insert: {
           college_id?: string | null
@@ -78,6 +79,7 @@ export type Database = {
           start_date: string
           title: string
           updated_at?: string
+          video_url?: string | null
         }
         Update: {
           college_id?: string | null
@@ -94,6 +96,7 @@ export type Database = {
           start_date?: string
           title?: string
           updated_at?: string
+          video_url?: string | null
         }
         Relationships: []
       }

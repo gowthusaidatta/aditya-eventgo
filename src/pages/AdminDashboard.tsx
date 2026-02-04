@@ -13,9 +13,11 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { EventMediaUpload } from "@/components/EventMediaUpload";
+import { EventShareDialog } from "@/components/EventShareDialog";
 import { 
   Users, Calendar, Edit, Trash2, Plus, 
-  Shield, Search, UserCheck, UserX, Building2, GraduationCap 
+  Shield, Search, UserCheck, UserX, Building2, GraduationCap, Share2 
 } from "lucide-react";
 
 interface User {
@@ -46,6 +48,8 @@ interface Event {
   start_date: string;
   end_date: string | null;
   location: string | null;
+  image_url: string | null;
+  video_url: string | null;
   created_by: string | null;
   is_featured: boolean | null;
 }
@@ -64,6 +68,7 @@ export default function AdminDashboard() {
   const [isAddEventOpen, setIsAddEventOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
+  const [sharingEvent, setSharingEvent] = useState<Event | null>(null);
 
   // New event form state
   const [newEvent, setNewEvent] = useState({
@@ -73,6 +78,8 @@ export default function AdminDashboard() {
     start_date: "",
     end_date: "",
     location: "",
+    image_url: null as string | null,
+    video_url: null as string | null,
     is_featured: false,
   });
 
@@ -237,7 +244,15 @@ export default function AdminDashboard() {
     const { error } = await supabase
       .from("events")
       .insert({
-        ...newEvent,
+        title: newEvent.title,
+        description: newEvent.description,
+        event_type: newEvent.event_type,
+        start_date: newEvent.start_date,
+        end_date: newEvent.end_date || null,
+        location: newEvent.location,
+        image_url: newEvent.image_url,
+        video_url: newEvent.video_url,
+        is_featured: newEvent.is_featured,
         created_by: user?.id,
       });
     
@@ -262,6 +277,8 @@ export default function AdminDashboard() {
       start_date: "",
       end_date: "",
       location: "",
+      image_url: null,
+      video_url: null,
       is_featured: false,
     });
     fetchEvents();
@@ -279,6 +296,8 @@ export default function AdminDashboard() {
         start_date: editingEvent.start_date,
         end_date: editingEvent.end_date,
         location: editingEvent.location,
+        image_url: editingEvent.image_url,
+        video_url: editingEvent.video_url,
         is_featured: editingEvent.is_featured,
       })
       .eq("id", editingEvent.id);
@@ -697,6 +716,12 @@ export default function AdminDashboard() {
                             placeholder="Event location"
                           />
                         </div>
+                        <EventMediaUpload
+                          imageUrl={newEvent.image_url}
+                          videoUrl={newEvent.video_url}
+                          onImageChange={(url) => setNewEvent({ ...newEvent, image_url: url })}
+                          onVideoChange={(url) => setNewEvent({ ...newEvent, video_url: url })}
+                        />
                       </div>
                       <DialogFooter>
                         <Button onClick={handleAddEvent}>Create Event</Button>
@@ -722,6 +747,14 @@ export default function AdminDashboard() {
                         </div>
                       </div>
                       <div className="flex gap-2">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={() => setSharingEvent(event)}
+                        >
+                          <Share2 className="mr-1 h-4 w-4" />
+                          Share
+                        </Button>
                         <Dialog>
                           <DialogTrigger asChild>
                             <Button variant="outline" size="sm" onClick={() => setEditingEvent(event)}>
@@ -729,7 +762,7 @@ export default function AdminDashboard() {
                               Edit
                             </Button>
                           </DialogTrigger>
-                          <DialogContent>
+                          <DialogContent className="max-h-[90vh] overflow-y-auto">
                             <DialogHeader>
                               <DialogTitle>Edit Event</DialogTitle>
                             </DialogHeader>
@@ -756,6 +789,12 @@ export default function AdminDashboard() {
                                     onChange={(e) => setEditingEvent({ ...editingEvent, location: e.target.value })}
                                   />
                                 </div>
+                                <EventMediaUpload
+                                  imageUrl={editingEvent.image_url}
+                                  videoUrl={editingEvent.video_url}
+                                  onImageChange={(url) => setEditingEvent({ ...editingEvent, image_url: url })}
+                                  onVideoChange={(url) => setEditingEvent({ ...editingEvent, video_url: url })}
+                                />
                               </div>
                             )}
                             <DialogFooter>
@@ -779,6 +818,17 @@ export default function AdminDashboard() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Share Event Dialog */}
+        {sharingEvent && (
+          <EventShareDialog
+            open={!!sharingEvent}
+            onOpenChange={(open) => !open && setSharingEvent(null)}
+            eventId={sharingEvent.id}
+            eventTitle={sharingEvent.title}
+            eventType={sharingEvent.event_type}
+          />
+        )}
       </main>
       <Footer />
     </div>

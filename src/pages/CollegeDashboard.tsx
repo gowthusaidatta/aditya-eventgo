@@ -10,10 +10,12 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, Users, BarChart3, PlusCircle, Eye, Edit, Trash2, UserCheck, UserX, AlertCircle } from "lucide-react";
+import { Calendar, Users, BarChart3, PlusCircle, Eye, Edit, Trash2, UserCheck, UserX, AlertCircle, Share2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { EventMediaUpload } from "@/components/EventMediaUpload";
+import { EventShareDialog } from "@/components/EventShareDialog";
 
 interface Event {
   id: string;
@@ -23,6 +25,8 @@ interface Event {
   start_date: string;
   end_date: string | null;
   location: string | null;
+  image_url: string | null;
+  video_url: string | null;
   is_featured: boolean | null;
   created_by: string | null;
 }
@@ -53,6 +57,7 @@ export default function CollegeDashboard() {
   const [registrationCounts, setRegistrationCounts] = useState<Record<string, number>>({});
   const [isAddEventOpen, setIsAddEventOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
+  const [sharingEvent, setSharingEvent] = useState<Event | null>(null);
 
   // New event form
   const [newEvent, setNewEvent] = useState({
@@ -62,6 +67,8 @@ export default function CollegeDashboard() {
     start_date: "",
     end_date: "",
     location: "",
+    image_url: null as string | null,
+    video_url: null as string | null,
     is_featured: false,
   });
 
@@ -197,7 +204,15 @@ export default function CollegeDashboard() {
 
   const handleAddEvent = async () => {
     const { error } = await supabase.from("events").insert({
-      ...newEvent,
+      title: newEvent.title,
+      description: newEvent.description,
+      event_type: newEvent.event_type,
+      start_date: newEvent.start_date,
+      end_date: newEvent.end_date || null,
+      location: newEvent.location,
+      image_url: newEvent.image_url,
+      video_url: newEvent.video_url,
+      is_featured: newEvent.is_featured,
       created_by: user?.id,
     });
     
@@ -222,6 +237,8 @@ export default function CollegeDashboard() {
       start_date: "",
       end_date: "",
       location: "",
+      image_url: null,
+      video_url: null,
       is_featured: false,
     });
     fetchEvents();
@@ -239,6 +256,8 @@ export default function CollegeDashboard() {
         start_date: editingEvent.start_date,
         end_date: editingEvent.end_date,
         location: editingEvent.location,
+        image_url: editingEvent.image_url,
+        video_url: editingEvent.video_url,
         is_featured: editingEvent.is_featured,
       })
       .eq("id", editingEvent.id);
@@ -399,6 +418,12 @@ export default function CollegeDashboard() {
                       placeholder="Event location"
                     />
                   </div>
+                  <EventMediaUpload
+                    imageUrl={newEvent.image_url}
+                    videoUrl={newEvent.video_url}
+                    onImageChange={(url) => setNewEvent({ ...newEvent, image_url: url })}
+                    onVideoChange={(url) => setNewEvent({ ...newEvent, video_url: url })}
+                  />
                 </div>
                 <DialogFooter>
                   <Button onClick={handleAddEvent}>Create Event</Button>
@@ -521,6 +546,9 @@ export default function CollegeDashboard() {
                         <Badge variant={new Date(event.start_date) > new Date() ? "default" : "secondary"}>
                           {new Date(event.start_date) > new Date() ? "Upcoming" : "Completed"}
                         </Badge>
+                        <Button variant="ghost" size="icon" onClick={() => setSharingEvent(event)}>
+                          <Share2 className="h-4 w-4" />
+                        </Button>
                         <Button variant="ghost" size="icon">
                           <Eye className="h-4 w-4" />
                         </Button>
@@ -531,7 +559,7 @@ export default function CollegeDashboard() {
                                 <Edit className="h-4 w-4" />
                               </Button>
                             </DialogTrigger>
-                            <DialogContent>
+                            <DialogContent className="max-h-[90vh] overflow-y-auto">
                               <DialogHeader>
                                 <DialogTitle>Edit Event</DialogTitle>
                               </DialogHeader>
@@ -558,6 +586,12 @@ export default function CollegeDashboard() {
                                       onChange={(e) => setEditingEvent({ ...editingEvent, location: e.target.value })}
                                     />
                                   </div>
+                                  <EventMediaUpload
+                                    imageUrl={editingEvent.image_url}
+                                    videoUrl={editingEvent.video_url}
+                                    onImageChange={(url) => setEditingEvent({ ...editingEvent, image_url: url })}
+                                    onVideoChange={(url) => setEditingEvent({ ...editingEvent, video_url: url })}
+                                  />
                                 </div>
                               )}
                               <DialogFooter>
@@ -633,6 +667,17 @@ export default function CollegeDashboard() {
             </TabsContent>
           )}
         </Tabs>
+
+        {/* Share Event Dialog */}
+        {sharingEvent && (
+          <EventShareDialog
+            open={!!sharingEvent}
+            onOpenChange={(open) => !open && setSharingEvent(null)}
+            eventId={sharingEvent.id}
+            eventTitle={sharingEvent.title}
+            eventType={sharingEvent.event_type}
+          />
+        )}
       </main>
       <Footer />
     </div>

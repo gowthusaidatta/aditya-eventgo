@@ -15,6 +15,8 @@ import CollegeDashboard from "./pages/CollegeDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
 import Profile from "./pages/Profile";
 import About from "./pages/About";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -31,6 +33,8 @@ const App = () => (
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/admin-login" element={<AdminLogin />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/events" element={<Events />} />
             <Route path="/hackathons" element={<Hackathons />} />
             <Route path="/student-dashboard" element={<StudentDashboard />} />
