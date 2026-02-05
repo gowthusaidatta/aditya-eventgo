@@ -17,7 +17,7 @@ import { EventMediaUpload } from "@/components/EventMediaUpload";
 import { EventShareDialog } from "@/components/EventShareDialog";
 import { 
   Users, Calendar, Edit, Trash2, Plus, 
-  Shield, Search, UserCheck, UserX, Building2, GraduationCap, Share2 
+  Shield, Search, UserCheck, UserX, Building2, GraduationCap, Share2, BarChart3
 } from "lucide-react";
 
 interface User {
@@ -377,12 +377,18 @@ export default function AdminDashboard() {
     <div className="min-h-screen bg-background">
       <Header />
       <main className="container py-8">
-        <div className="mb-8 flex items-center gap-3">
-          <Shield className="h-8 w-8 text-primary" />
-          <div>
-            <h1 className="text-3xl font-bold">Admin Dashboard</h1>
-            <p className="text-muted-foreground">Manage users, events, and platform settings</p>
+        <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <Shield className="h-8 w-8 text-primary" />
+            <div>
+              <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+              <p className="text-muted-foreground">Manage users, events, and platform settings</p>
+            </div>
           </div>
+          <Button onClick={() => navigate("/analytics")} variant="outline" className="gap-2">
+            <BarChart3 className="h-4 w-4" />
+            View Analytics
+          </Button>
         </div>
 
         {/* Stats Cards */}
