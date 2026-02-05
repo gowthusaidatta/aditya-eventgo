@@ -20,7 +20,9 @@ import ResetPassword from "./pages/ResetPassword";
 import AnalyticsDashboard from "./pages/AnalyticsDashboard";
 import OrganizerDashboard from "./pages/OrganizerDashboard";
 import JudgeDashboard from "./pages/JudgeDashboard";
+import MentorDashboard from "./pages/MentorDashboard";
 import EventDetail from "./pages/EventDetail";
+import CreateEvent from "./pages/CreateEvent";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
