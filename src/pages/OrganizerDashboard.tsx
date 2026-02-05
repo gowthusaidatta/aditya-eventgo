@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { QRCheckIn } from "@/components/QRCheckIn";
 import { Leaderboard } from "@/components/Leaderboard";
+import { EventPermissionsManager } from "@/components/EventPermissionsManager";
 
 interface Event {
   id: string;
@@ -464,22 +465,27 @@ function EventSettings({ event, onUpdate }: { event: Event; onUpdate: () => void
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Event Settings</CardTitle>
-        <CardDescription>Manage event configuration</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h4 className="font-medium">Event Status</h4>
-            <p className="text-sm text-muted-foreground">Current status: {event.status}</p>
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Event Settings</CardTitle>
+          <CardDescription>Manage event configuration</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="font-medium">Event Status</h4>
+              <p className="text-sm text-muted-foreground">Current status: {event.status}</p>
+            </div>
+            {event.status === "draft" && (
+              <Button onClick={handlePublish}>Publish Event</Button>
+            )}
           </div>
-          {event.status === "draft" && (
-            <Button onClick={handlePublish}>Publish Event</Button>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+
+      {/* Permissions Management */}
+      <EventPermissionsManager eventId={event.id} eventTitle={event.title} />
+    </div>
   );
 }

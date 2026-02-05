@@ -31,7 +31,7 @@ const signupSchema = z.object({
   rollNumber: z.string().optional(),
   branch: z.string().optional(),
   // College fields
-  collegeRole: z.enum(["principal", "dean", "staff_coordinator", "student_coordinator"]).optional(),
+  collegeRole: z.enum(["principal", "dean", "staff_coordinator", "student_coordinator", "host"]).optional(),
   collegeId: z.string().optional(),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
@@ -348,6 +348,7 @@ export default function Signup() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
+                            <SelectItem value="host">Host (Event Organizer)</SelectItem>
                             <SelectItem value="principal">Principal</SelectItem>
                             <SelectItem value="dean">Dean</SelectItem>
                             <SelectItem value="staff_coordinator">Staff Coordinator</SelectItem>

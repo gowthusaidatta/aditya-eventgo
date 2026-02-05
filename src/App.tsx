@@ -23,6 +23,7 @@ import JudgeDashboard from "./pages/JudgeDashboard";
 import MentorDashboard from "./pages/MentorDashboard";
 import EventDetail from "./pages/EventDetail";
 import CreateEvent from "./pages/CreateEvent";
+import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -52,6 +53,7 @@ const App = () => (
             <Route path="/create-event" element={<CreateEvent />} />
             <Route path="/admin-dashboard" element={<AdminDashboard />} />
             <Route path="/analytics" element={<AnalyticsDashboard />} />
+            <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/about" element={<About />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
