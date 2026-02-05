@@ -8,9 +8,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { 
   BarChart3, Users, Calendar,
-  Activity, UserPlus, CalendarCheck, ArrowUpRight, ArrowDownRight 
+  Activity, UserPlus, CalendarCheck, ArrowUpRight, ArrowDownRight, ArrowLeft 
 } from "lucide-react";
 import { 
   AreaChart, Area, BarChart, Bar,
@@ -370,6 +371,9 @@ export default function AnalyticsDashboard() {
       <main className="container py-8">
         <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
+            <Button variant="outline" size="icon" onClick={() => navigate("/dashboard")}>
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
             <BarChart3 className="h-8 w-8 text-primary" />
             <div>
               <h1 className="text-3xl font-bold">Analytics Dashboard</h1>

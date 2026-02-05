@@ -1,7 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 
 export type UserType = "student" | "college" | "admin";
-export type CollegeRole = "principal" | "dean" | "staff_coordinator" | "student_coordinator";
+export type CollegeRole = "principal" | "dean" | "staff_coordinator" | "student_coordinator" | "host";
 
 export interface SignupData {
   email: string;

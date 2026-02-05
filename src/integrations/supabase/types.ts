@@ -178,6 +178,50 @@ export type Database = {
           },
         ]
       }
+      event_permissions: {
+        Row: {
+          event_id: string
+          expires_at: string | null
+          granted_at: string
+          granted_by: string
+          id: string
+          is_active: boolean
+          notes: string | null
+          permission_type: string
+          user_id: string
+        }
+        Insert: {
+          event_id: string
+          expires_at?: string | null
+          granted_at?: string
+          granted_by: string
+          id?: string
+          is_active?: boolean
+          notes?: string | null
+          permission_type: string
+          user_id: string
+        }
+        Update: {
+          event_id?: string
+          expires_at?: string | null
+          granted_at?: string
+          granted_by?: string
+          id?: string
+          is_active?: boolean
+          notes?: string | null
+          permission_type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_permissions_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       event_registrations: {
         Row: {
           check_in_by: string | null
@@ -1057,6 +1101,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_grant_event_permission: {
+        Args: { _event_id: string; _user_id: string }
+        Returns: boolean
+      }
       generate_certificate_id: { Args: never; Returns: string }
       generate_invite_code: { Args: never; Returns: string }
       get_user_type: {
@@ -1069,6 +1117,10 @@ export type Database = {
           _role: Database["public"]["Enums"]["college_role"]
           _user_id: string
         }
+        Returns: boolean
+      }
+      has_event_permission: {
+        Args: { _event_id: string; _permission: string; _user_id: string }
         Returns: boolean
       }
       has_platform_role: {
@@ -1109,6 +1161,7 @@ export type Database = {
         | "dean"
         | "staff_coordinator"
         | "student_coordinator"
+        | "host"
       event_mode: "online" | "offline" | "hybrid"
       event_status:
         | "draft"
@@ -1291,6 +1344,7 @@ export const Constants = {
         "dean",
         "staff_coordinator",
         "student_coordinator",
+        "host",
       ],
       event_mode: ["online", "offline", "hybrid"],
       event_status: ["draft", "published", "ongoing", "completed", "cancelled"],
