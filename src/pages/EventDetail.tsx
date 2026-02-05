@@ -125,7 +125,7 @@ export default function EventDetail() {
       // Check if user is registered
       if (user) {
         const { data: regData } = await supabase
-          .from("event_registrations")
+          .from("hackathon_registrations")
           .select("id")
           .eq("event_id", eventId)
           .eq("user_id", user.id)

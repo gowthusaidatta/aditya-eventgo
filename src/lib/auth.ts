@@ -35,6 +35,9 @@ export async function signUp(data: SignupData) {
   if (!authData.user) throw new Error("Failed to create user");
 
   // Create the profile
+  // Students don't need verification, only college members do
+  const isVerified = userType === "student" ? true : false;
+  
   const { error: profileError } = await supabase.from("profiles").insert({
     user_id: authData.user.id,
     full_name: fullName,
@@ -46,7 +49,7 @@ export async function signUp(data: SignupData) {
     roll_number: rollNumber,
     branch,
     college_id: collegeId,
-    is_verified: false, // All new users start unverified
+    is_verified: isVerified, // Students auto-verified, college members need verification
   });
 
   if (profileError) throw profileError;

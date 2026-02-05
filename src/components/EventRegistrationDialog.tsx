@@ -20,9 +20,10 @@ interface EventRegistrationDialogProps {
   event: Event | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onRegistrationSuccess?: (eventId: string) => void;
 }
 
-export function EventRegistrationDialog({ event, open, onOpenChange }: EventRegistrationDialogProps) {
+export function EventRegistrationDialog({ event, open, onOpenChange, onRegistrationSuccess }: EventRegistrationDialogProps) {
   const { user, profile } = useAuth();
   const { toast } = useToast();
   const [registering, setRegistering] = useState(false);
@@ -121,6 +122,12 @@ export function EventRegistrationDialog({ event, open, onOpenChange }: EventRegi
       title: "Registered successfully!",
       description: `You're registered for ${event.title}. A confirmation email has been sent.`,
     });
+    
+    // Call the success callback if provided
+    if (onRegistrationSuccess) {
+      onRegistrationSuccess(event.id);
+    }
+    
     onOpenChange(false);
     setRegistering(false);
   };

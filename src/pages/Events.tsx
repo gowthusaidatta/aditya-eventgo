@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar, MapPin, Users, Search } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { EventRegistrationDialog } from "@/components/EventRegistrationDialog";
 
 interface Event {
@@ -34,7 +35,9 @@ const eventTypeColors: Record<string, string> = {
 
 export default function Events() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { user } = useAuth();
   const [events, setEvents] = useState<Event[]>([]);
+  const [registeredEventIds, setRegisteredEventIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [loading, setLoading] = useState(true);
@@ -44,6 +47,13 @@ export default function Events() {
   useEffect(() => {
     fetchEvents();
   }, []);
+
+  useEffect(() => {
+    // Fetch user's registrations
+    if (user) {
+      fetchUserRegistrations();
+    }
+  }, [user]);
 
   // Handle ?register=eventId URL parameter
   useEffect(() => {
@@ -58,6 +68,19 @@ export default function Events() {
       }
     }
   }, [searchParams, events, setSearchParams]);
+
+  const fetchUserRegistrations = async () => {
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from("hackathon_registrations")
+      .select("event_id")
+      .eq("user_id", user.id);
+
+    if (!error && data) {
+      setRegisteredEventIds(new Set(data.map(reg => reg.event_id)));
+    }
+  };
 
   const fetchEvents = async () => {
     const { data, error } = await supabase
@@ -77,6 +100,12 @@ export default function Events() {
   const handleOpenRegistration = (event: Event) => {
     setSelectedEvent(event);
     setIsDialogOpen(true);
+  };
+
+  const handleRegistrationSuccess = (eventId: string) => {
+    // Add event to registered set
+    setRegisteredEventIds(new Set([...registeredEventIds, eventId]));
+    setIsDialogOpen(false);
   };
 
   const filteredEvents = events.filter((event) => {
@@ -178,9 +207,18 @@ export default function Events() {
                   )}
                 </CardContent>
                 <CardFooter>
-                  <Button className="w-full" onClick={() => handleOpenRegistration(event)}>
-                    Register Now
-                  </Button>
+                  {registeredEventIds.has(event.id) ? (
+                    <Button className="w-full" variant="outline" disabled>
+                      ✓ Registered
+                    </Button>
+                  ) : (
+                    <Button 
+                      className="w-full" 
+                      onClick={() => handleOpenRegistration(event)}
+                    >
+                      Register Now
+                    </Button>
+                  )}
                 </CardFooter>
               </Card>
             ))}
@@ -194,6 +232,7 @@ export default function Events() {
         event={selectedEvent}
         open={isDialogOpen}
         onOpenChange={setIsDialogOpen}
+        onRegistrationSuccess={handleRegistrationSuccess}
       />
     </div>
   );
