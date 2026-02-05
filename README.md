@@ -1,8 +1,7 @@
-# Welcome to your Lovable project
+# Welcome to EventGO project
 
 ## Project info
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
 
 ## How can I edit this code?
 
