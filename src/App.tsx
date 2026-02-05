@@ -18,6 +18,9 @@ import About from "./pages/About";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import AnalyticsDashboard from "./pages/AnalyticsDashboard";
+import OrganizerDashboard from "./pages/OrganizerDashboard";
+import JudgeDashboard from "./pages/JudgeDashboard";
+import EventDetail from "./pages/EventDetail";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -38,8 +41,11 @@ const App = () => (
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/events" element={<Events />} />
             <Route path="/hackathons" element={<Hackathons />} />
+            <Route path="/event/:eventId" element={<EventDetail />} />
             <Route path="/student-dashboard" element={<StudentDashboard />} />
             <Route path="/college-dashboard" element={<CollegeDashboard />} />
+            <Route path="/organizer-dashboard" element={<OrganizerDashboard />} />
+            <Route path="/judge-dashboard" element={<JudgeDashboard />} />
             <Route path="/admin-dashboard" element={<AdminDashboard />} />
             <Route path="/analytics" element={<AnalyticsDashboard />} />
             <Route path="/profile" element={<Profile />} />
