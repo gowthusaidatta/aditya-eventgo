@@ -1,16 +1,14 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import { Calendar, MapPin, Users, Search, Code } from "lucide-react";
-import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
+import { EventRegistrationDialog } from "@/components/EventRegistrationDialog";
 
 interface Event {
   id: string;
@@ -25,40 +23,30 @@ interface Event {
 }
 
 export default function Hackathons() {
-  const { user, profile } = useAuth();
-  const { toast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [hackathons, setHackathons] = useState<Event[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
-  const [registering, setRegistering] = useState(false);
-  
-  // Registration form state
-  const [regForm, setRegForm] = useState({
-    full_name: "",
-    roll_number: "",
-    college_name: "",
-    branch: "",
-    email: "",
-    phone: "",
-  });
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   useEffect(() => {
     fetchHackathons();
   }, []);
 
+  // Handle ?register=eventId URL parameter
   useEffect(() => {
-    if (profile) {
-      setRegForm({
-        full_name: profile.full_name || "",
-        roll_number: profile.roll_number || "",
-        college_name: profile.college_name || "",
-        branch: profile.branch || "",
-        email: profile.email || "",
-        phone: profile.phone || "",
-      });
+    const registerId = searchParams.get("register");
+    if (registerId && hackathons.length > 0) {
+      const hackathonToRegister = hackathons.find(h => h.id === registerId);
+      if (hackathonToRegister) {
+        setSelectedEvent(hackathonToRegister);
+        setIsDialogOpen(true);
+        // Clear the URL parameter
+        setSearchParams({});
+      }
     }
-  }, [profile]);
+  }, [searchParams, hackathons, setSearchParams]);
 
   const fetchHackathons = async () => {
     const { data, error } = await supabase
@@ -75,60 +63,9 @@ export default function Hackathons() {
     setLoading(false);
   };
 
-  const handleRegister = async () => {
-    if (!user || !selectedEvent) {
-      toast({
-        title: "Please log in",
-        description: "You need to be logged in to register for hackathons.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!regForm.full_name || !regForm.roll_number || !regForm.college_name || !regForm.branch) {
-      toast({
-        title: "Missing information",
-        description: "Please fill in all required fields.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setRegistering(true);
-    
-    const { error } = await supabase.from("hackathon_registrations").insert({
-      event_id: selectedEvent.id,
-      user_id: user.id,
-      full_name: regForm.full_name,
-      roll_number: regForm.roll_number,
-      college_name: regForm.college_name,
-      branch: regForm.branch,
-      email: regForm.email,
-      phone: regForm.phone,
-    });
-
-    if (error) {
-      if (error.code === "23505") {
-        toast({
-          title: "Already registered",
-          description: "You have already registered for this hackathon.",
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Error",
-          description: "Failed to register. Please try again.",
-          variant: "destructive",
-        });
-      }
-    } else {
-      toast({
-        title: "Registered successfully!",
-        description: `You're registered for ${selectedEvent.title}.`,
-      });
-      setSelectedEvent(null);
-    }
-    setRegistering(false);
+  const handleOpenRegistration = (hackathon: Event) => {
+    setSelectedEvent(hackathon);
+    setIsDialogOpen(true);
   };
 
   const filteredHackathons = hackathons.filter(h =>
@@ -175,9 +112,17 @@ export default function Hackathons() {
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {filteredHackathons.map((hackathon) => (
               <Card key={hackathon.id} className="overflow-hidden transition-shadow hover:shadow-lg">
-                <div className="aspect-video bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
-                  <Code className="h-16 w-16 text-primary/50" />
-                </div>
+                {hackathon.image_url ? (
+                  <img 
+                    src={hackathon.image_url} 
+                    alt={hackathon.title}
+                    className="aspect-video w-full object-cover"
+                  />
+                ) : (
+                  <div className="aspect-video bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
+                    <Code className="h-16 w-16 text-primary/50" />
+                  </div>
+                )}
                 <CardHeader className="pb-2">
                   <Badge className="w-fit bg-primary/10 text-primary">Hackathon</Badge>
                   <h3 className="text-lg font-semibold">{hackathon.title}</h3>
@@ -204,87 +149,9 @@ export default function Hackathons() {
                   )}
                 </CardContent>
                 <CardFooter>
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button className="w-full" onClick={() => setSelectedEvent(hackathon)}>
-                        Register Now
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="max-w-md">
-                      <DialogHeader>
-                        <DialogTitle>Register for {hackathon.title}</DialogTitle>
-                        <DialogDescription>
-                          Fill in your details to register for this hackathon.
-                        </DialogDescription>
-                      </DialogHeader>
-                      {!user ? (
-                        <div className="py-4 text-center">
-                          <p className="text-muted-foreground">Please log in to register for hackathons.</p>
-                          <Button className="mt-4" onClick={() => window.location.href = "/login"}>
-                            Log In
-                          </Button>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="grid gap-4 py-4">
-                            <div className="grid gap-2">
-                              <Label>Full Name *</Label>
-                              <Input
-                                value={regForm.full_name}
-                                onChange={(e) => setRegForm({ ...regForm, full_name: e.target.value })}
-                                placeholder="Enter your full name"
-                              />
-                            </div>
-                            <div className="grid gap-2">
-                              <Label>Roll Number *</Label>
-                              <Input
-                                value={regForm.roll_number}
-                                onChange={(e) => setRegForm({ ...regForm, roll_number: e.target.value })}
-                                placeholder="Enter your roll number"
-                              />
-                            </div>
-                            <div className="grid gap-2">
-                              <Label>College Name *</Label>
-                              <Input
-                                value={regForm.college_name}
-                                onChange={(e) => setRegForm({ ...regForm, college_name: e.target.value })}
-                                placeholder="Enter your college name"
-                              />
-                            </div>
-                            <div className="grid gap-2">
-                              <Label>Branch *</Label>
-                              <Input
-                                value={regForm.branch}
-                                onChange={(e) => setRegForm({ ...regForm, branch: e.target.value })}
-                                placeholder="e.g., Computer Science"
-                              />
-                            </div>
-                            <div className="grid gap-2">
-                              <Label>Email</Label>
-                              <Input
-                                value={regForm.email}
-                                onChange={(e) => setRegForm({ ...regForm, email: e.target.value })}
-                                placeholder="Enter your email"
-                              />
-                            </div>
-                            <div className="grid gap-2">
-                              <Label>Phone (Optional)</Label>
-                              <Input
-                                value={regForm.phone}
-                                onChange={(e) => setRegForm({ ...regForm, phone: e.target.value })}
-                                placeholder="Enter your phone number"
-                              />
-                            </div>
-                          </div>
-                          <DialogFooter>
-                            <Button onClick={handleRegister} disabled={registering}>
-                              {registering ? "Registering..." : "Submit Registration"}
-                            </Button>
-                          </DialogFooter>
-                        </>
-                      )}
-                    </DialogContent>
-                  </Dialog>
+                  <Button className="w-full" onClick={() => handleOpenRegistration(hackathon)}>
+                    Register Now
+                  </Button>
                 </CardFooter>
               </Card>
             ))}
@@ -292,6 +159,13 @@ export default function Hackathons() {
         )}
       </main>
       <Footer />
+
+      {/* Registration Dialog */}
+      <EventRegistrationDialog
+        event={selectedEvent}
+        open={isDialogOpen}
+        onOpenChange={setIsDialogOpen}
+      />
     </div>
   );
 }
