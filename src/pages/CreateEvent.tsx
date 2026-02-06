@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/integrations/api/apiClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Trash2, Calendar, Trophy, Users, Building2, Clock, MapPin } from "lucide-react";
@@ -150,51 +150,46 @@ export default function CreateEvent() {
     setLoading(true);
 
     try {
-      // Create event
-      const { data: event, error: eventError } = await supabase
-        .from("events")
-        .insert({
-          title,
-          description,
-          event_type: eventType,
-          is_hackathon: isHackathon,
-          mode,
-          location: mode !== "online" ? location : null,
-          online_link: mode !== "offline" ? onlineLink : null,
-          start_date: new Date(startDate).toISOString(),
-          end_date: endDate ? new Date(endDate).toISOString() : null,
-          registration_deadline: registrationDeadline ? new Date(registrationDeadline).toISOString() : null,
-          max_participants: maxParticipants ? parseInt(maxParticipants) : null,
-          registration_fee: parseFloat(registrationFee) || 0,
-          team_size_min: isHackathon ? parseInt(teamSizeMin) : 1,
-          team_size_max: isHackathon ? parseInt(teamSizeMax) : 1,
-          prizes: prizes.filter(p => p.position && p.amount).map(({ id, ...p }) => p),
-          sponsors: sponsors.filter(s => s.name).map(({ id, ...s }) => s),
-          status,
-          created_by: user.id,
-        })
-        .select()
-        .single();
+      const event = await apiClient.createEvent({
+        title,
+        description,
+        event_type: eventType,
+        is_hackathon: isHackathon,
+        mode,
+        location: mode !== "online" ? location : null,
+        online_link: mode !== "offline" ? onlineLink : null,
+        start_date: new Date(startDate).toISOString(),
+        end_date: endDate ? new Date(endDate).toISOString() : null,
+        registration_deadline: registrationDeadline ? new Date(registrationDeadline).toISOString() : null,
+        max_participants: maxParticipants ? parseInt(maxParticipants) : null,
+        registration_fee: parseFloat(registrationFee) || 0,
+        team_size_min: isHackathon ? parseInt(teamSizeMin) : 1,
+        team_size_max: isHackathon ? parseInt(teamSizeMax) : 1,
+        prizes: prizes.filter(p => p.position && p.amount).map(({ id, ...p }) => p),
+        sponsors: sponsors.filter(s => s.name).map(({ id, ...s }) => s),
+        status,
+        created_by: user.id,
+      });
 
-      if (eventError) throw eventError;
-
-      // Create schedule items
-      if (schedule.length > 0 && event) {
+      const eventId = event?.eventId || event?.id;
+      if (schedule.length > 0 && eventId) {
         const scheduleItems = schedule
           .filter(s => s.title && s.start_time)
-          .map(({ id, ...s }) => ({
-            ...s,
-            event_id: event.id,
-            start_time: new Date(`${startDate}T${s.start_time}`).toISOString(),
-            end_time: s.end_time ? new Date(`${startDate}T${s.end_time}`).toISOString() : null,
-          }));
+          .map(({ id, ...s }) => {
+            const startBase = new Date(startDate);
+            const dayOffset = Math.max((s.day_number || 1) - 1, 0);
+            const dayDate = new Date(startBase.getTime() + dayOffset * 24 * 60 * 60 * 1000);
+            const dayString = dayDate.toISOString().split("T")[0];
+            return {
+              ...s,
+              schedule_id: id,
+              start_time: new Date(`${dayString}T${s.start_time}`).toISOString(),
+              end_time: s.end_time ? new Date(`${dayString}T${s.end_time}`).toISOString() : null,
+            };
+          });
 
         if (scheduleItems.length > 0) {
-          const { error: scheduleError } = await supabase
-            .from("event_schedule")
-            .insert(scheduleItems);
-
-          if (scheduleError) console.error("Schedule error:", scheduleError);
+          await apiClient.createSchedule(eventId, scheduleItems);
         }
       }
 

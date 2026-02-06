@@ -5,17 +5,21 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar, MapPin } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/integrations/api/apiClient";
 
 interface Event {
-  id: string;
+  eventId: string;
   title: string;
   description: string | null;
-  event_type: string;
-  start_date: string;
+  event_type?: string;
+  category?: string;
+  startDate?: string;
+  start_date?: string;
   location: string | null;
-  image_url: string | null;
-  is_featured: boolean | null;
+  image_url?: string | null;
+  bannerUrl?: string | null;
+  is_featured?: boolean | null;
+  registration_deadline?: string | null;
 }
 
 export function FeaturedEvents() {
@@ -28,34 +32,21 @@ export function FeaturedEvents() {
   }, []);
 
   const fetchFeaturedEvents = async () => {
-    const { data, error } = await supabase
-      .from("events")
-      .select("*")
-      .eq("is_featured", true)
-      .order("start_date", { ascending: true })
-      .limit(3);
-
-    if (error) {
+    try {
+      const data = await apiClient.getEvents();
+      const now = new Date();
+      const featured = (data || []).filter((event: Event) => event.is_featured);
+      const fallback = featured.length > 0 ? featured : data || [];
+      const upcoming = fallback
+        .filter((event: Event) => {
+          if (!event.registration_deadline) return true;
+          return new Date(event.registration_deadline) >= now;
+        })
+        .slice(0, 3);
+      setEvents(upcoming);
+    } catch (error) {
       console.error("Error fetching events:", error);
-      // Fallback to any recent events if no featured ones
-      const { data: fallbackData } = await supabase
-        .from("events")
-        .select("*")
-        .order("start_date", { ascending: true })
-        .limit(3);
-      setEvents(fallbackData || []);
-    } else {
-      // If no featured events, get recent ones
-      if (data.length === 0) {
-        const { data: fallbackData } = await supabase
-          .from("events")
-          .select("*")
-          .order("start_date", { ascending: true })
-          .limit(3);
-        setEvents(fallbackData || []);
-      } else {
-        setEvents(data);
-      }
+      setEvents([]);
     }
     setLoading(false);
   };
@@ -116,11 +107,23 @@ export function FeaturedEvents() {
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {events.map((event) => (
-            <Card key={event.id} className="group overflow-hidden border-border/50 transition-all hover:shadow-lg">
+            <Card
+              key={event.eventId}
+              className="group cursor-pointer overflow-hidden border-border/50 transition-all hover:shadow-lg"
+              role="button"
+              tabIndex={0}
+              onClick={() => navigate(`/event/${event.eventId}`)}
+              onKeyDown={(eventKey) => {
+                if (eventKey.key === "Enter" || eventKey.key === " ") {
+                  eventKey.preventDefault();
+                  navigate(`/event/${event.eventId}`);
+                }
+              }}
+            >
               <div className="relative aspect-video overflow-hidden bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
-                {event.image_url ? (
+                {(event.image_url || event.bannerUrl) ? (
                   <img
-                    src={event.image_url}
+                    src={event.image_url || event.bannerUrl}
                     alt={event.title}
                     className="h-full w-full object-cover transition-transform group-hover:scale-105"
                   />
@@ -131,7 +134,7 @@ export function FeaturedEvents() {
               <CardHeader className="pb-2">
                 <div className="mb-2 flex flex-wrap gap-1">
                   <Badge variant="secondary" className="text-xs capitalize">
-                    {event.event_type}
+                    {event.event_type || event.category || "event"}
                   </Badge>
                 </div>
                 <h3 className="line-clamp-1 text-lg font-semibold">{event.title}</h3>
@@ -142,7 +145,7 @@ export function FeaturedEvents() {
               <CardContent className="space-y-2 pb-2">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Calendar className="h-4 w-4 text-primary" />
-                  <span>{new Date(event.start_date).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" })}</span>
+                  <span>{new Date(event.startDate || event.start_date || "").toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" })}</span>
                 </div>
                 {event.location && (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -152,7 +155,13 @@ export function FeaturedEvents() {
                 )}
               </CardContent>
               <CardFooter>
-                <Button className="w-full" onClick={() => navigate("/events")}>
+                <Button
+                  className="w-full"
+                  onClick={(clickEvent) => {
+                    clickEvent.stopPropagation();
+                    navigate(`/event/${event.eventId}`);
+                  }}
+                >
                   View Details
                 </Button>
               </CardFooter>

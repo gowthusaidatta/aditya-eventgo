@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
@@ -7,22 +7,27 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Calendar, MapPin, Users, Search, Code } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/integrations/api/apiClient";
 import { EventRegistrationDialog } from "@/components/EventRegistrationDialog";
 
 interface Event {
-  id: string;
+  eventId: string;
   title: string;
   description: string | null;
-  event_type: string;
-  start_date: string;
-  end_date: string | null;
+  event_type?: string;
+  startDate?: string;
+  start_date?: string;
+  end_date?: string | null;
   location: string | null;
-  max_participants: number | null;
-  image_url: string | null;
+  max_participants?: number | null;
+  capacity?: number | null;
+  image_url?: string | null;
+  bannerUrl?: string | null;
+  registration_deadline?: string | null;
 }
 
 export default function Hackathons() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [hackathons, setHackathons] = useState<Event[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -49,16 +54,18 @@ export default function Hackathons() {
   }, [searchParams, hackathons, setSearchParams]);
 
   const fetchHackathons = async () => {
-    const { data, error } = await supabase
-      .from("events")
-      .select("*")
-      .eq("event_type", "hackathon")
-      .order("start_date", { ascending: true });
-
-    if (error) {
+    try {
+      const data = await apiClient.getEvents();
+      const now = new Date();
+      const upcoming = (data || []).filter((event: Event) => {
+        const typeValue = event.event_type || "";
+        if (typeValue !== "hackathon") return false;
+        if (!event.registration_deadline) return true;
+        return new Date(event.registration_deadline) >= now;
+      });
+      setHackathons(upcoming);
+    } catch (error) {
       console.error("Error fetching hackathons:", error);
-    } else {
-      setHackathons(data || []);
     }
     setLoading(false);
   };
@@ -111,10 +118,22 @@ export default function Hackathons() {
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {filteredHackathons.map((hackathon) => (
-              <Card key={hackathon.id} className="overflow-hidden transition-shadow hover:shadow-lg">
-                {hackathon.image_url ? (
+              <Card
+                key={hackathon.eventId}
+                className="cursor-pointer overflow-hidden transition-shadow hover:shadow-lg"
+                role="button"
+                tabIndex={0}
+                onClick={() => navigate(`/event/${hackathon.eventId}`)}
+                onKeyDown={(eventKey) => {
+                  if (eventKey.key === "Enter" || eventKey.key === " ") {
+                    eventKey.preventDefault();
+                    navigate(`/event/${hackathon.eventId}`);
+                  }
+                }}
+              >
+                {(hackathon.image_url || hackathon.bannerUrl) ? (
                   <img 
-                    src={hackathon.image_url} 
+                    src={hackathon.image_url || hackathon.bannerUrl} 
                     alt={hackathon.title}
                     className="aspect-video w-full object-cover"
                   />
@@ -133,7 +152,7 @@ export default function Hackathons() {
                   )}
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Calendar className="h-4 w-4" />
-                    <span>{new Date(hackathon.start_date).toLocaleDateString("en-IN", { weekday: "short", month: "short", day: "numeric" })}</span>
+                    <span>{new Date(hackathon.startDate || hackathon.start_date || "").toLocaleDateString("en-IN", { weekday: "short", month: "short", day: "numeric" })}</span>
                   </div>
                   {hackathon.location && (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -141,15 +160,21 @@ export default function Hackathons() {
                       <span>{hackathon.location}</span>
                     </div>
                   )}
-                  {hackathon.max_participants && (
+                  {(hackathon.max_participants || hackathon.capacity) && (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Users className="h-4 w-4" />
-                      <span>Max {hackathon.max_participants} participants</span>
+                      <span>Max {hackathon.max_participants || hackathon.capacity} participants</span>
                     </div>
                   )}
                 </CardContent>
                 <CardFooter>
-                  <Button className="w-full" onClick={() => handleOpenRegistration(hackathon)}>
+                  <Button
+                    className="w-full"
+                    onClick={(clickEvent) => {
+                      clickEvent.stopPropagation();
+                      handleOpenRegistration(hackathon);
+                    }}
+                  >
                     Register Now
                   </Button>
                 </CardFooter>

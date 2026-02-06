@@ -89,10 +89,34 @@ class ApiClient {
     }
   }
 
-  // Event endpoints
-  async getEvents() {
+  async listUsers(params?: { userType?: string; verified?: boolean }) {
     try {
-      const response = await this.client.get("/events");
+      const response = await this.client.get("/users", {
+        params: {
+          userType: params?.userType,
+          verified: params?.verified !== undefined ? String(params.verified) : undefined,
+        },
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching users list:", error);
+      throw error;
+    }
+  }
+
+  async deleteUser(userId: string) {
+    try {
+      await this.client.delete(`/users/${userId}`);
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      throw error;
+    }
+  }
+
+  // Event endpoints
+  async getEvents(params?: any) {
+    try {
+      const response = await this.client.get("/events", { params });
       return response.data;
     } catch (error) {
       console.error("Error fetching events:", error);
@@ -135,6 +159,330 @@ class ApiClient {
       await this.client.delete(`/events/${eventId}`);
     } catch (error) {
       console.error("Error deleting event:", error);
+      throw error;
+    }
+  }
+
+  async getRegistrationCount(eventId: string) {
+    try {
+      const response = await this.client.get(`/registrations/count`, {
+        params: { eventId },
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching registration count:", error);
+      throw error;
+    }
+  }
+
+  async getRegistrations(eventId?: string) {
+    try {
+      const response = await this.client.get("/registrations", {
+        params: eventId ? { eventId } : undefined,
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching registrations:", error);
+      throw error;
+    }
+  }
+
+  async getEventRegistrations(eventId: string) {
+    try {
+      const response = await this.client.get("/registrations", {
+        params: { eventId, all: true },
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching event registrations:", error);
+      throw error;
+    }
+  }
+
+  async getAllRegistrations(params?: { startDate?: string; endDate?: string }) {
+    try {
+      const response = await this.client.get("/registrations/all", { params });
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching registrations:", error);
+      throw error;
+    }
+  }
+
+  async cancelRegistration(eventId: string) {
+    try {
+      await this.client.delete(`/registrations/${eventId}`);
+    } catch (error) {
+      console.error("Error canceling registration:", error);
+      throw error;
+    }
+  }
+
+  async registerForEvent(eventId: string, payload: any) {
+    try {
+      const response = await this.client.post("/registrations", {
+        eventId,
+        ...payload,
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error registering for event:", error);
+      throw error;
+    }
+  }
+
+  async getProfile() {
+    try {
+      const response = await this.client.get("/users/me");
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching profile:", error);
+      throw error;
+    }
+  }
+
+  async updateProfile(data: any) {
+    try {
+      const response = await this.client.put("/users/me", data);
+      return response.data;
+    } catch (error) {
+      console.error("Error updating profile:", error);
+      throw error;
+    }
+  }
+
+  async createMediaUploadUrl(payload: { fileName: string; contentType: string; folder?: string }) {
+    try {
+      const response = await this.client.post("/media/presign", payload);
+      return response.data;
+    } catch (error) {
+      console.error("Error creating upload URL:", error);
+      throw error;
+    }
+  }
+
+  async getTeams(eventId: string) {
+    try {
+      const response = await this.client.get("/teams", { params: { eventId } });
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching teams:", error);
+      throw error;
+    }
+  }
+
+  async getTeamsByMentor(mentorId: string) {
+    try {
+      const response = await this.client.get("/teams", { params: { mentorId } });
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching mentor teams:", error);
+      throw error;
+    }
+  }
+
+  async getTeamByInviteCode(eventId: string, inviteCode: string) {
+    try {
+      const response = await this.client.get("/teams", {
+        params: { eventId, inviteCode },
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching team by invite code:", error);
+      throw error;
+    }
+  }
+
+  async createTeam(payload: any) {
+    try {
+      const response = await this.client.post("/teams", payload);
+      return response.data;
+    } catch (error) {
+      console.error("Error creating team:", error);
+      throw error;
+    }
+  }
+
+  async updateTeam(teamId: string, payload: any) {
+    try {
+      const response = await this.client.put(`/teams/${teamId}`, payload);
+      return response.data;
+    } catch (error) {
+      console.error("Error updating team:", error);
+      throw error;
+    }
+  }
+
+  async deleteTeam(teamId: string, eventId: string) {
+    try {
+      await this.client.delete(`/teams/${teamId}`, { params: { event_id: eventId } });
+    } catch (error) {
+      console.error("Error deleting team:", error);
+      throw error;
+    }
+  }
+
+  async getTeamMembers(teamId: string) {
+    try {
+      const response = await this.client.get(`/teams/${teamId}/members`);
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching team members:", error);
+      throw error;
+    }
+  }
+
+  async addTeamMember(teamId: string, payload: any) {
+    try {
+      const response = await this.client.post(`/teams/${teamId}/members`, payload);
+      return response.data;
+    } catch (error) {
+      console.error("Error adding team member:", error);
+      throw error;
+    }
+  }
+
+  async removeTeamMember(teamId: string, userId: string) {
+    try {
+      await this.client.delete(`/teams/${teamId}/members/${userId}`);
+    } catch (error) {
+      console.error("Error removing team member:", error);
+      throw error;
+    }
+  }
+
+  async getUsersByIds(userIds: string[]) {
+    try {
+      const response = await this.client.get("/users", {
+        params: { ids: userIds.join(",") },
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      throw error;
+    }
+  }
+
+  async getNotifications() {
+    try {
+      const response = await this.client.get("/notifications");
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching notifications:", error);
+      throw error;
+    }
+  }
+
+  async markNotificationRead(notificationId: string) {
+    try {
+      const response = await this.client.post("/notifications/mark-read", {
+        notification_id: notificationId,
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error updating notification:", error);
+      throw error;
+    }
+  }
+
+  async markAllNotificationsRead() {
+    try {
+      const response = await this.client.post("/notifications/mark-all-read");
+      return response.data;
+    } catch (error) {
+      console.error("Error updating notifications:", error);
+      throw error;
+    }
+  }
+
+  async getSubmissions(params: { eventId: string; teamId?: string; round?: string }) {
+    try {
+      const response = await this.client.get("/submissions", { params });
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching submissions:", error);
+      throw error;
+    }
+  }
+
+  async createSubmission(payload: any) {
+    try {
+      const response = await this.client.post("/submissions", payload);
+      return response.data;
+    } catch (error) {
+      console.error("Error creating submission:", error);
+      throw error;
+    }
+  }
+
+  async updateSubmission(submissionId: string, payload: any) {
+    try {
+      const response = await this.client.put(`/submissions/${submissionId}`, payload);
+      return response.data;
+    } catch (error) {
+      console.error("Error updating submission:", error);
+      throw error;
+    }
+  }
+
+  async getRubrics(eventId: string) {
+    try {
+      const response = await this.client.get("/rubrics", { params: { eventId } });
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching rubrics:", error);
+      throw error;
+    }
+  }
+
+  async saveJudgingScore(payload: any) {
+    try {
+      const response = await this.client.post("/judging/scores", payload);
+      return response.data;
+    } catch (error) {
+      console.error("Error saving score:", error);
+      throw error;
+    }
+  }
+
+  async getJudgingScores(submissionId: string) {
+    try {
+      const response = await this.client.get("/judging/scores", {
+        params: { submissionId },
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching scores:", error);
+      throw error;
+    }
+  }
+
+  async getPlatformRoles(params?: { role?: string; eventId?: string }) {
+    try {
+      const response = await this.client.get("/roles/platform", { params });
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching platform roles:", error);
+      throw error;
+    }
+  }
+
+  async createSchedule(eventId: string, items: any[]) {
+    try {
+      const response = await this.client.post(`/events/${eventId}/schedule`, { items });
+      return response.data;
+    } catch (error) {
+      console.error("Error saving schedule:", error);
+      throw error;
+    }
+  }
+
+  async checkInRegistration(payload: { eventId: string; qrCode: string }) {
+    try {
+      const response = await this.client.post("/registrations/checkin", payload);
+      return response.data;
+    } catch (error) {
+      console.error("Error checking in registration:", error);
       throw error;
     }
   }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
@@ -8,19 +8,24 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar, MapPin, Users, Search } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/integrations/api/apiClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { EventRegistrationDialog } from "@/components/EventRegistrationDialog";
 
 interface Event {
-  id: string;
+  eventId: string;
   title: string;
   description: string | null;
-  event_type: string;
-  start_date: string;
+  event_type?: string;
+  category?: string;
+  startDate?: string;
+  start_date?: string;
   location: string | null;
-  max_participants: number | null;
-  image_url: string | null;
+  capacity?: number | null;
+  max_participants?: number | null;
+  image_url?: string | null;
+  bannerUrl?: string | null;
+  registration_deadline?: string | null;
 }
 
 const eventTypeColors: Record<string, string> = {
@@ -34,6 +39,7 @@ const eventTypeColors: Record<string, string> = {
 };
 
 export default function Events() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const [events, setEvents] = useState<Event[]>([]);
@@ -72,27 +78,25 @@ export default function Events() {
   const fetchUserRegistrations = async () => {
     if (!user) return;
 
-    const { data, error } = await supabase
-      .from("hackathon_registrations")
-      .select("event_id")
-      .eq("user_id", user.id);
-
-    if (!error && data) {
-      setRegisteredEventIds(new Set(data.map(reg => reg.event_id)));
+    try {
+      const data = await apiClient.getRegistrations();
+      setRegisteredEventIds(new Set(data.map((reg: any) => reg.event_id)));
+    } catch (error) {
+      console.error("Error fetching registrations:", error);
     }
   };
 
   const fetchEvents = async () => {
-    const { data, error } = await supabase
-      .from("events")
-      .select("*")
-      .neq("event_type", "hackathon")
-      .order("start_date", { ascending: true });
-
-    if (error) {
+    try {
+      const data = await apiClient.getEvents();
+      const now = new Date();
+      const upcoming = (data || []).filter((event: Event) => {
+        if (!event.registration_deadline) return true;
+        return new Date(event.registration_deadline) >= now;
+      });
+      setEvents(upcoming);
+    } catch (error) {
       console.error("Error fetching events:", error);
-    } else {
-      setEvents(data || []);
     }
     setLoading(false);
   };
@@ -111,7 +115,8 @@ export default function Events() {
   const filteredEvents = events.filter((event) => {
     const matchesSearch = event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       event.description?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesType = typeFilter === "all" || event.event_type === typeFilter;
+    const typeValue = event.event_type || event.category || "";
+    const matchesType = typeFilter === "all" || typeValue === typeFilter;
     return matchesSearch && matchesType;
   });
 
@@ -165,10 +170,22 @@ export default function Events() {
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {filteredEvents.map((event) => (
-              <Card key={event.id} className="overflow-hidden transition-shadow hover:shadow-lg">
-                {event.image_url ? (
+              <Card
+                key={event.eventId}
+                className="cursor-pointer overflow-hidden transition-shadow hover:shadow-lg"
+                role="button"
+                tabIndex={0}
+                onClick={() => navigate(`/event/${event.eventId}`)}
+                onKeyDown={(eventKey) => {
+                  if (eventKey.key === "Enter" || eventKey.key === " ") {
+                    eventKey.preventDefault();
+                    navigate(`/event/${event.eventId}`);
+                  }
+                }}
+              >
+                {(event.image_url || event.bannerUrl) ? (
                   <img 
-                    src={event.image_url} 
+                    src={event.image_url || event.bannerUrl} 
                     alt={event.title}
                     className="aspect-video w-full object-cover"
                   />
@@ -179,8 +196,8 @@ export default function Events() {
                 )}
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
-                    <Badge className={eventTypeColors[event.event_type] || "bg-muted"}>
-                      {event.event_type}
+                    <Badge className={eventTypeColors[event.event_type || ""] || "bg-muted"}>
+                      {event.event_type || event.category || "event"}
                     </Badge>
                   </div>
                   <h3 className="line-clamp-1 text-lg font-semibold">{event.title}</h3>
@@ -191,7 +208,7 @@ export default function Events() {
                 <CardContent className="space-y-2 pb-2">
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Calendar className="h-4 w-4" />
-                    <span>{new Date(event.start_date).toLocaleDateString("en-IN", { weekday: "short", month: "short", day: "numeric" })}</span>
+                    <span>{new Date(event.startDate || event.start_date || "").toLocaleDateString("en-IN", { weekday: "short", month: "short", day: "numeric" })}</span>
                   </div>
                   {event.location && (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -199,22 +216,25 @@ export default function Events() {
                       <span>{event.location}</span>
                     </div>
                   )}
-                  {event.max_participants && (
+                  {(event.max_participants || event.capacity) && (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Users className="h-4 w-4" />
-                      <span>{event.max_participants} spots</span>
+                      <span>{event.max_participants || event.capacity} spots</span>
                     </div>
                   )}
                 </CardContent>
                 <CardFooter>
-                  {registeredEventIds.has(event.id) ? (
+                  {registeredEventIds.has(event.eventId) ? (
                     <Button className="w-full" variant="outline" disabled>
                       ✓ Registered
                     </Button>
                   ) : (
-                    <Button 
-                      className="w-full" 
-                      onClick={() => handleOpenRegistration(event)}
+                    <Button
+                      className="w-full"
+                      onClick={(clickEvent) => {
+                        clickEvent.stopPropagation();
+                        handleOpenRegistration(event);
+                      }}
                     >
                       Register Now
                     </Button>

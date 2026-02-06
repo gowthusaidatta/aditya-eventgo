@@ -5,13 +5,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/integrations/api/apiClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { ClipboardCheck, Star, Save, ExternalLink } from "lucide-react";
 
 interface Rubric {
   id: string;
+  rubric_id?: string;
   criteria_name: string;
   description: string | null;
   max_score: number;
@@ -19,7 +20,9 @@ interface Rubric {
 }
 
 interface Submission {
-  id: string;
+  id?: string;
+  submission_id?: string;
+  team_id?: string;
   title: string;
   description: string | null;
   github_url: string | null;
@@ -50,43 +53,59 @@ export function JudgingPanel({ eventId, submissionId }: JudgingPanelProps) {
 
   const fetchData = async () => {
     try {
-      // Fetch submission details
-      const { data: submissionData, error: submissionError } = await supabase
-        .from("submissions")
-        .select(`
-          *,
-          team:teams(name)
-        `)
-        .eq("id", submissionId)
-        .single();
+      const [submissionsData, rubricsData, teamsData] = await Promise.all([
+        apiClient.getSubmissions({ eventId }),
+        apiClient.getRubrics(eventId),
+        apiClient.getTeams(eventId),
+      ]);
 
-      if (submissionError) throw submissionError;
-      setSubmission(submissionData);
+      const submissions = Array.isArray(submissionsData) ? submissionsData : [];
+      const found = submissions.find(
+        (item: any) => (item.submission_id || item.id) === submissionId
+      );
 
-      // Fetch rubrics for this event
-      const { data: rubricsData, error: rubricsError } = await supabase
-        .from("judging_rubrics")
-        .select("*")
-        .eq("event_id", eventId)
-        .order("sort_order");
+      if (!found) {
+        setSubmission(null);
+        setRubrics(
+          (Array.isArray(rubricsData) ? rubricsData : []).map((rubric: Rubric) => ({
+            ...rubric,
+            id: rubric.id || rubric.rubric_id || "",
+          }))
+        );
+        return;
+      }
 
-      if (rubricsError) throw rubricsError;
-      setRubrics(rubricsData || []);
+      const teams = Array.isArray(teamsData) ? teamsData : [];
+      const teamMatch = teams.find((team: any) => team.team_id === found.team_id);
 
-      // Fetch existing scores from this judge
+      const resolvedSubmissionId = found.submission_id || found.id || submissionId;
+      setSubmission({
+        ...found,
+        submission_id: resolvedSubmissionId,
+        team: { name: teamMatch?.name || "Unknown" },
+      });
+
+      const normalizedRubrics = (Array.isArray(rubricsData) ? rubricsData : []).map(
+        (rubric: Rubric) => ({
+          ...rubric,
+          id: rubric.id || rubric.rubric_id || "",
+        })
+      );
+      setRubrics(normalizedRubrics);
+
       if (user) {
-        const { data: existingScores, error: scoresError } = await supabase
-          .from("judge_scores")
-          .select("*")
-          .eq("submission_id", submissionId)
-          .eq("judge_id", user.id);
-
-        if (scoresError) throw scoresError;
-
+        const existingScores = await apiClient.getJudgingScores(resolvedSubmissionId);
         const scoresMap: Record<string, { score: number; feedback: string }> = {};
-        existingScores?.forEach((s) => {
-          scoresMap[s.rubric_id] = { score: s.score, feedback: s.feedback || "" };
-        });
+        (Array.isArray(existingScores) ? existingScores : [])
+          .filter((score: any) => score.judge_id === user.id)
+          .forEach((score: any) => {
+            const rubricId = score.rubric_id || score.id;
+            if (!rubricId) return;
+            scoresMap[rubricId] = {
+              score: score.score,
+              feedback: score.feedback || "",
+            };
+          });
         setScores(scoresMap);
       }
     } catch (error) {
@@ -115,22 +134,18 @@ export function JudgingPanel({ eventId, submissionId }: JudgingPanelProps) {
 
     setSaving(true);
     try {
+      const resolvedSubmissionId = submission?.submission_id || submission?.id || submissionId;
       for (const rubric of rubrics) {
         const scoreData = scores[rubric.id];
         if (scoreData) {
-          const { error } = await supabase
-            .from("judge_scores")
-            .upsert({
-              submission_id: submissionId,
-              judge_id: user.id,
-              rubric_id: rubric.id,
-              score: scoreData.score,
-              feedback: scoreData.feedback || null,
-            }, {
-              onConflict: 'submission_id,judge_id,rubric_id'
-            });
-
-          if (error) throw error;
+          await apiClient.saveJudgingScore({
+            submission_id: resolvedSubmissionId,
+            rubric_id: rubric.id,
+            score: scoreData.score,
+            feedback: scoreData.feedback || null,
+            event_id: eventId,
+            team_id: submission?.team_id,
+          });
         }
       }
 

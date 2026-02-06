@@ -76,11 +76,9 @@ All Docker infrastructure has been successfully created with full cross-platform
 #### 7. **.env.docker**
 - Template for Docker environment configuration
 - Includes all required variables:
-  - Supabase configuration
-  - AWS credentials
+  - AWS region + DynamoDB tables
   - JWT secrets
-  - DynamoDB settings
-  - Cognito configuration (optional)
+  - Cognito configuration
   - SMTP settings (optional)
 
 #### 8. **nginx.conf** (79 lines - Existing, optimized)

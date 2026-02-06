@@ -2,6 +2,8 @@ version: '3.8'
 
 services:
   backend:
+    env_file:
+      - .env.docker
     environment:
       - NODE_ENV=production
     restart: always
@@ -20,6 +22,8 @@ services:
         max-file: "3"
 
   frontend:
+    env_file:
+      - .env.docker
     restart: always
     deploy:
       resources:

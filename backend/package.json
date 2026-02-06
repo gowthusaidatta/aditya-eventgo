@@ -1,0 +1,21 @@
+{
+  "name": "eventgo-backend",
+  "version": "1.0.0",
+  "main": "server.js",
+  "license": "MIT",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.983.0",
+    "@aws-sdk/lib-dynamodb": "^3.983.0",
+    "@aws-sdk/client-s3": "^3.983.0",
+    "@aws-sdk/s3-request-presigner": "^3.983.0",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "helmet": "^7.2.0",
+    "jose": "^5.6.3",
+    "morgan": "^1.10.0"
+  }
+}

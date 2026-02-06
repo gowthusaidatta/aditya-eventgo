@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/integrations/api/apiClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
 interface Team {
-  id: string;
+  team_id: string;
   event_id: string;
   name: string;
   description: string | null;
@@ -20,7 +20,6 @@ interface Team {
 }
 
 interface TeamMember {
-  id: string;
   team_id: string;
   user_id: string;
   role: string;
@@ -47,60 +46,34 @@ export function useTeam(eventId: string | null) {
     }
 
     try {
-      // First check if user is part of any team for this event
-      const { data: memberData, error: memberError } = await supabase
-        .from("team_members")
-        .select("team_id")
-        .eq("user_id", user.id);
+      const teams = await apiClient.getTeams(eventId);
+      if (!Array.isArray(teams) || teams.length === 0) {
+        setTeam(null);
+        setMembers([]);
+        setIsLeader(false);
+        return;
+      }
 
-      if (memberError) throw memberError;
+      for (const candidate of teams) {
+        const membersData = await apiClient.getTeamMembers(candidate.team_id);
+        const isMember = membersData.some((m: TeamMember) => m.user_id === user.id);
+        if (!isMember) continue;
 
-      if (memberData && memberData.length > 0) {
-        const teamIds = memberData.map((m) => m.team_id);
-        
-        // Get teams for this event
-        const { data: teamData, error: teamError } = await supabase
-          .from("teams")
-          .select("*")
-          .eq("event_id", eventId)
-          .in("id", teamIds)
-          .single();
+        const userIds = membersData.map((m: TeamMember) => m.user_id);
+        const profiles = userIds.length > 0 ? await apiClient.getUsersByIds(userIds) : [];
+        const membersWithProfiles = membersData.map((m: TeamMember) => ({
+          ...m,
+          profile: profiles.find((p: any) => p.userId === m.user_id) || {
+            full_name: "Unknown",
+            email: "",
+            avatar_url: null,
+          },
+        }));
 
-        if (teamError && teamError.code !== "PGRST116") throw teamError;
-
-        if (teamData) {
-          setTeam(teamData);
-          setIsLeader(teamData.leader_id === user.id);
-
-          // Fetch team members
-          const { data: membersData, error: membersError } = await supabase
-            .from("team_members")
-            .select("*")
-            .eq("team_id", teamData.id);
-
-          if (membersError) throw membersError;
-          
-          // Fetch profiles for each member
-          if (membersData && membersData.length > 0) {
-            const userIds = membersData.map((m) => m.user_id);
-            const { data: profilesData } = await supabase
-              .from("profiles")
-              .select("user_id, full_name, email, avatar_url")
-              .in("user_id", userIds);
-
-            const membersWithProfiles = membersData.map((m) => ({
-              ...m,
-              profile: profilesData?.find((p) => p.user_id === m.user_id) || {
-                full_name: "Unknown",
-                email: "",
-                avatar_url: null,
-              },
-            }));
-            setMembers(membersWithProfiles);
-          } else {
-            setMembers([]);
-          }
-        }
+        setTeam(candidate);
+        setIsLeader(candidate.leader_id === user.id);
+        setMembers(membersWithProfiles);
+        return;
       }
     } catch (error) {
       console.error("Error fetching team:", error);
@@ -117,29 +90,11 @@ export function useTeam(eventId: string | null) {
     if (!user || !eventId) return null;
 
     try {
-      const { data: teamData, error: teamError } = await supabase
-        .from("teams")
-        .insert({
-          event_id: eventId,
-          name,
-          description,
-          leader_id: user.id,
-        })
-        .select()
-        .single();
-
-      if (teamError) throw teamError;
-
-      // Add leader as team member
-      const { error: memberError } = await supabase
-        .from("team_members")
-        .insert({
-          team_id: teamData.id,
-          user_id: user.id,
-          role: "leader",
-        });
-
-      if (memberError) throw memberError;
+      const teamData = await apiClient.createTeam({
+        event_id: eventId,
+        name,
+        description,
+      });
 
       toast({
         title: "Team created!",
@@ -164,14 +119,9 @@ export function useTeam(eventId: string | null) {
 
     try {
       // Find team by invite code
-      const { data: teamData, error: teamError } = await supabase
-        .from("teams")
-        .select("*")
-        .eq("invite_code", inviteCode.toUpperCase())
-        .eq("event_id", eventId)
-        .single();
-
-      if (teamError) {
+      const teamResults = await apiClient.getTeamByInviteCode(eventId, inviteCode);
+      const teamData = Array.isArray(teamResults) ? teamResults[0] : null;
+      if (!teamData) {
         toast({
           title: "Invalid invite code",
           description: "No team found with that invite code for this event.",
@@ -180,14 +130,7 @@ export function useTeam(eventId: string | null) {
         return false;
       }
 
-      // Check team size
-      const { data: membersCount, error: countError } = await supabase
-        .from("team_members")
-        .select("id")
-        .eq("team_id", teamData.id);
-
-      if (countError) throw countError;
-      
+      const membersCount = await apiClient.getTeamMembers(teamData.team_id);
       // Basic team size check
       if (membersCount && membersCount.length >= 10) {
         toast({
@@ -198,17 +141,13 @@ export function useTeam(eventId: string | null) {
         return false;
       }
       
-      // Add user to team
-      const { error: joinError } = await supabase
-        .from("team_members")
-        .insert({
-          team_id: teamData.id,
+      try {
+        await apiClient.addTeamMember(teamData.team_id, {
           user_id: user.id,
           role: "member",
         });
-
-      if (joinError) {
-        if (joinError.code === "23505") {
+      } catch (joinError: any) {
+        if (joinError?.response?.status === 409) {
           toast({
             title: "Already a member",
             description: "You're already a member of this team.",
@@ -251,13 +190,7 @@ export function useTeam(eventId: string | null) {
     }
 
     try {
-      const { error } = await supabase
-        .from("team_members")
-        .delete()
-        .eq("team_id", team.id)
-        .eq("user_id", user.id);
-
-      if (error) throw error;
+      await apiClient.removeTeamMember(team.team_id, user.id);
 
       toast({
         title: "Left team",
@@ -282,12 +215,7 @@ export function useTeam(eventId: string | null) {
     if (!isLeader || !team) return false;
 
     try {
-      const { error } = await supabase
-        .from("team_members")
-        .delete()
-        .eq("id", memberId);
-
-      if (error) throw error;
+      await apiClient.removeTeamMember(team.team_id, memberId);
 
       toast({
         title: "Member removed",

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/integrations/api/apiClient";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
@@ -21,8 +21,9 @@ import {
 } from "lucide-react";
 
 interface User {
-  id: string;
-  user_id: string;
+  id?: string;
+  user_id?: string;
+  userId?: string;
   full_name: string;
   email: string;
   phone: string | null;
@@ -33,15 +34,12 @@ interface User {
   branch: string | null;
   is_verified: boolean;
   created_at: string;
-}
-
-interface UserRole {
-  user_id: string;
-  role: string;
+  college_role?: string | null;
 }
 
 interface Event {
   id: string;
+  eventId?: string;
   title: string;
   description: string | null;
   event_type: string;
@@ -60,7 +58,6 @@ export default function AdminDashboard() {
   const { toast } = useToast();
   
   const [users, setUsers] = useState<User[]>([]);
-  const [userRoles, setUserRoles] = useState<UserRole[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
@@ -91,91 +88,50 @@ export default function AdminDashboard() {
     
     if (user && profile?.user_type === "admin") {
       fetchUsers();
-      fetchUserRoles();
       fetchEvents();
     }
   }, [user, profile, loading, navigate]);
 
   const fetchUsers = async () => {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .order("created_at", { ascending: false });
-    
-    if (error) {
-      console.error("Error fetching users:", error);
-      return;
-    }
-    setUsers(data || []);
-  };
-
-  const fetchUserRoles = async () => {
-    const { data, error } = await supabase
-      .from("user_roles")
-      .select("*");
-    
-    if (error) {
-      console.error("Error fetching roles:", error);
-      return;
-    }
-    setUserRoles(data || []);
+    const data = await apiClient.listUsers();
+    const list = Array.isArray(data) ? data : [];
+    const normalized = list
+      .map((item) => ({
+        ...item,
+        user_id: item.user_id || item.userId,
+        userId: item.userId || item.user_id,
+        id: item.id || item.userId || item.user_id,
+      }))
+      .sort((a, b) => new Date(b.created_at || b.createdAt || 0).getTime() - new Date(a.created_at || a.createdAt || 0).getTime());
+    setUsers(normalized);
   };
 
   const fetchEvents = async () => {
-    const { data, error } = await supabase
-      .from("events")
-      .select("*")
-      .order("created_at", { ascending: false });
-    
-    if (error) {
-      console.error("Error fetching events:", error);
-      return;
-    }
-    setEvents(data || []);
+    const data = await apiClient.getEvents();
+    const normalized = (Array.isArray(data) ? data : [])
+      .map((event) => ({
+        ...event,
+        id: event.eventId || event.id,
+      }))
+      .sort((a, b) => new Date(b.created_at || b.createdAt || 0).getTime() - new Date(a.created_at || a.createdAt || 0).getTime());
+    setEvents(normalized);
   };
 
   const getUserRole = (userId: string) => {
-    const role = userRoles.find(r => r.user_id === userId);
-    return role?.role;
+    const role = users.find(u => (u.user_id || u.userId) === userId)?.college_role;
+    return role || null;
   };
 
   const handleVerifyUser = async (userId: string, isVerified: boolean) => {
-    // Find the user being verified
-    const targetUser = users.find(u => u.user_id === userId);
-    
-    const { error } = await supabase
-      .from("profiles")
-      .update({ is_verified: isVerified })
-      .eq("user_id", userId);
-    
-    if (error) {
+    try {
+      await apiClient.updateUserProfile(userId, { is_verified: isVerified });
+    } catch (error) {
       toast({
         title: "Error",
         description: "Failed to update verification status",
         variant: "destructive",
       });
       return;
-    }
-    
-    // Send verification email if verifying (not unverifying)
-    if (isVerified && targetUser) {
-      try {
-        const response = await supabase.functions.invoke("send-verification-email", {
-          body: {
-            email: targetUser.email,
-            fullName: targetUser.full_name,
-            verifiedBy: profile?.full_name || "Admin",
-            userType: targetUser.user_type,
-            role: getUserRole(targetUser.user_id),
-          },
-        });
-        
-        if (response.error) {
-          console.error("Failed to send verification email:", response.error);
-        }
-      } catch (emailError) {
-        console.error("Error sending verification email:", emailError);
-      }
     }
     
     toast({
@@ -186,12 +142,9 @@ export default function AdminDashboard() {
   };
 
   const handleDeleteUser = async (userId: string) => {
-    const { error } = await supabase
-      .from("profiles")
-      .delete()
-      .eq("user_id", userId);
-    
-    if (error) {
+    try {
+      await apiClient.deleteUser(userId);
+    } catch (error) {
       toast({
         title: "Error",
         description: "Failed to delete user",
@@ -210,9 +163,8 @@ export default function AdminDashboard() {
   const handleUpdateUser = async () => {
     if (!editingUser) return;
 
-    const { error } = await supabase
-      .from("profiles")
-      .update({
+    try {
+      await apiClient.updateUserProfile(editingUser.user_id || editingUser.userId || "", {
         full_name: editingUser.full_name,
         email: editingUser.email,
         phone: editingUser.phone,
@@ -220,10 +172,8 @@ export default function AdminDashboard() {
         roll_number: editingUser.roll_number,
         college_id: editingUser.college_id,
         branch: editingUser.branch,
-      })
-      .eq("user_id", editingUser.user_id);
-    
-    if (error) {
+      });
+    } catch (error) {
       toast({
         title: "Error",
         description: "Failed to update user",
@@ -241,9 +191,8 @@ export default function AdminDashboard() {
   };
 
   const handleAddEvent = async () => {
-    const { error } = await supabase
-      .from("events")
-      .insert({
+    try {
+      await apiClient.createEvent({
         title: newEvent.title,
         description: newEvent.description,
         event_type: newEvent.event_type,
@@ -255,8 +204,7 @@ export default function AdminDashboard() {
         is_featured: newEvent.is_featured,
         created_by: user?.id,
       });
-    
-    if (error) {
+    } catch (error) {
       toast({
         title: "Error",
         description: "Failed to create event",
@@ -287,9 +235,8 @@ export default function AdminDashboard() {
   const handleUpdateEvent = async () => {
     if (!editingEvent) return;
 
-    const { error } = await supabase
-      .from("events")
-      .update({
+    try {
+      await apiClient.updateEvent(editingEvent.id, {
         title: editingEvent.title,
         description: editingEvent.description,
         event_type: editingEvent.event_type,
@@ -299,10 +246,8 @@ export default function AdminDashboard() {
         image_url: editingEvent.image_url,
         video_url: editingEvent.video_url,
         is_featured: editingEvent.is_featured,
-      })
-      .eq("id", editingEvent.id);
-    
-    if (error) {
+      });
+    } catch (error) {
       toast({
         title: "Error",
         description: "Failed to update event",
@@ -320,12 +265,9 @@ export default function AdminDashboard() {
   };
 
   const handleDeleteEvent = async (eventId: string) => {
-    const { error } = await supabase
-      .from("events")
-      .delete()
-      .eq("id", eventId);
-    
-    if (error) {
+    try {
+      await apiClient.deleteEvent(eventId);
+    } catch (error) {
       toast({
         title: "Error",
         description: "Failed to delete event",
@@ -524,8 +466,8 @@ export default function AdminDashboard() {
                           <Badge variant={user.user_type === "student" ? "secondary" : "default"}>
                             {user.user_type}
                           </Badge>
-                          {user.user_type === "college" && getUserRole(user.user_id) && (
-                            <Badge variant="outline">{getUserRole(user.user_id)}</Badge>
+                          {user.user_type === "college" && getUserRole(user.user_id || user.userId || "") && (
+                            <Badge variant="outline">{getUserRole(user.user_id || user.userId || "")}</Badge>
                           )}
                           {user.is_verified ? (
                             <Badge className="bg-green-500">Verified</Badge>
@@ -543,12 +485,12 @@ export default function AdminDashboard() {
                       </div>
                       <div className="flex gap-2">
                         {user.is_verified ? (
-                          <Button variant="outline" size="sm" onClick={() => handleVerifyUser(user.user_id, false)}>
+                          <Button variant="outline" size="sm" onClick={() => handleVerifyUser(user.user_id || user.userId || "", false)}>
                             <UserX className="mr-1 h-4 w-4" />
                             Unverify
                           </Button>
                         ) : (
-                          <Button variant="default" size="sm" onClick={() => handleVerifyUser(user.user_id, true)}>
+                          <Button variant="default" size="sm" onClick={() => handleVerifyUser(user.user_id || user.userId || "", true)}>
                             <UserCheck className="mr-1 h-4 w-4" />
                             Verify
                           </Button>
@@ -629,7 +571,7 @@ export default function AdminDashboard() {
                             </DialogFooter>
                           </DialogContent>
                         </Dialog>
-                        <Button variant="destructive" size="sm" onClick={() => handleDeleteUser(user.user_id)}>
+                        <Button variant="destructive" size="sm" onClick={() => handleDeleteUser(user.user_id || user.userId || "")}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>

@@ -4,15 +4,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/integrations/api/apiClient";
 import { useToast } from "@/hooks/use-toast";
 
 interface Event {
-  id: string;
+  eventId: string;
   title: string;
   description: string | null;
   event_type: string;
-  start_date: string;
+  start_date?: string;
+  startDate?: string;
   location: string | null;
 }
 
@@ -71,19 +72,21 @@ export function EventRegistrationDialog({ event, open, onOpenChange, onRegistrat
 
     setRegistering(true);
     
-    const { error } = await supabase.from("hackathon_registrations").insert({
-      event_id: event.id,
-      user_id: user.id,
-      full_name: regForm.full_name,
-      roll_number: regForm.roll_number,
-      college_name: regForm.college_name,
-      branch: regForm.branch,
-      email: regForm.email,
-      phone: regForm.phone,
-    });
-
-    if (error) {
-      if (error.code === "23505") {
+    try {
+      await apiClient.registerForEvent(event.eventId, {
+        full_name: regForm.full_name,
+        roll_number: regForm.roll_number,
+        college_name: regForm.college_name,
+        branch: regForm.branch,
+        email: regForm.email,
+        phone: regForm.phone,
+        event_type: event.event_type,
+        event_title: event.title,
+        event_date: event.startDate || event.start_date,
+        event_location: event.location,
+      });
+    } catch (error: any) {
+      if (error?.response?.status === 409) {
         toast({
           title: "Already registered",
           description: "You have already registered for this event.",
@@ -100,24 +103,6 @@ export function EventRegistrationDialog({ event, open, onOpenChange, onRegistrat
       return;
     }
 
-    // Send confirmation email
-    try {
-      await supabase.functions.invoke("send-registration-email", {
-        body: {
-          email: regForm.email,
-          fullName: regForm.full_name,
-          eventTitle: event.title,
-          eventType: event.event_type,
-          eventDate: event.start_date,
-          eventLocation: event.location,
-          rollNumber: regForm.roll_number,
-          collegeName: regForm.college_name,
-        },
-      });
-    } catch (emailError) {
-      console.error("Failed to send confirmation email:", emailError);
-    }
-
     toast({
       title: "Registered successfully!",
       description: `You're registered for ${event.title}. A confirmation email has been sent.`,
@@ -125,7 +110,7 @@ export function EventRegistrationDialog({ event, open, onOpenChange, onRegistrat
     
     // Call the success callback if provided
     if (onRegistrationSuccess) {
-      onRegistrationSuccess(event.id);
+      onRegistrationSuccess(event.eventId);
     }
     
     onOpenChange(false);

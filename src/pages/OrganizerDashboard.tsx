@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/integrations/api/apiClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { 
@@ -25,6 +25,7 @@ import { EventPermissionsManager } from "@/components/EventPermissionsManager";
 
 interface Event {
   id: string;
+  eventId?: string;
   title: string;
   event_type: string;
   start_date: string;
@@ -61,44 +62,34 @@ export default function OrganizerDashboard() {
     if (!user) return;
 
     try {
-      // Fetch events created by this user or where they're an organizer
-      const { data: eventsData, error: eventsError } = await supabase
-        .from("events")
-        .select("*")
-        .eq("created_by", user.id)
-        .order("start_date", { ascending: false });
+      const eventsData = await apiClient.getEvents({ createdBy: user.id });
+      const normalizedEvents = (Array.isArray(eventsData) ? eventsData : [])
+        .map((event) => ({
+          ...event,
+          id: event.eventId || event.id,
+          start_date: event.start_date || event.startDate,
+        }))
+        .sort((a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime());
 
-      if (eventsError) throw eventsError;
-      setEvents(eventsData || []);
-      
-      if (eventsData && eventsData.length > 0) {
-        setSelectedEvent(eventsData[0]);
+      setEvents(normalizedEvents);
+
+      if (normalizedEvents.length > 0) {
+        setSelectedEvent(normalizedEvents[0]);
       }
 
-      // Calculate stats
-      const eventIds = eventsData?.map(e => e.id) || [];
-      
-      if (eventIds.length > 0) {
-        const { count: regCount } = await supabase
-          .from("event_registrations")
-          .select("*", { count: "exact", head: true })
-          .in("event_id", eventIds);
+      const counts = await Promise.all(
+        normalizedEvents.map((event) => apiClient.getRegistrationCount(event.id))
+      );
+      const totalRegistrations = counts.reduce((sum, data) => sum + (data?.count || 0), 0);
 
-        const { data: paymentsData } = await supabase
-          .from("payments")
-          .select("amount")
-          .in("event_id", eventIds)
-          .eq("status", "completed");
-
-        const totalRevenue = paymentsData?.reduce((sum, p) => sum + (p.amount || 0), 0) || 0;
-
-        setStats({
-          totalEvents: eventsData?.length || 0,
-          totalRegistrations: regCount || 0,
-          activeEvents: eventsData?.filter(e => e.status === "published" || e.status === "ongoing").length || 0,
-          totalRevenue,
-        });
-      }
+      setStats({
+        totalEvents: normalizedEvents.length,
+        totalRegistrations,
+        activeEvents: normalizedEvents.filter((event) =>
+          event.status === "published" || event.status === "ongoing"
+        ).length,
+        totalRevenue: 0,
+      });
     } catch (error) {
       console.error("Error fetching data:", error);
       toast({
@@ -278,29 +269,18 @@ function RegistrationsPanel({ eventId }: { eventId: string }) {
   }, [eventId]);
 
   const fetchRegistrations = async () => {
-    const { data, error } = await supabase
-      .from("event_registrations")
-      .select("*")
-      .eq("event_id", eventId)
-      .order("registered_at", { ascending: false });
-
-    if (!error) {
-      // Fetch profiles for each registration
-      const userIds = data?.map(r => r.user_id) || [];
-      if (userIds.length > 0) {
-        const { data: profiles } = await supabase
-          .from("profiles")
-          .select("user_id, full_name, email, roll_number, college_name")
-          .in("user_id", userIds);
-
-        const registrationsWithProfiles = data?.map(r => ({
-          ...r,
-          profile: profiles?.find(p => p.user_id === r.user_id),
-        }));
-        setRegistrations(registrationsWithProfiles || []);
-      } else {
-        setRegistrations([]);
-      }
+    const data = await apiClient.getEventRegistrations(eventId);
+    const items = Array.isArray(data) ? data : [];
+    const userIds = items.map((r) => r.user_id).filter(Boolean);
+    if (userIds.length > 0) {
+      const profiles = await apiClient.getUsersByIds(userIds);
+      const registrationsWithProfiles = items.map((r) => ({
+        ...r,
+        profile: profiles.find((p: any) => p.userId === r.user_id) || null,
+      }));
+      setRegistrations(registrationsWithProfiles);
+    } else {
+      setRegistrations([]);
     }
     setLoading(false);
   };
@@ -313,7 +293,7 @@ function RegistrationsPanel({ eventId }: { eventId: string }) {
       r.profile?.roll_number || "",
       r.profile?.college_name || "",
       r.registration_status || r.status,
-      new Date(r.registered_at).toLocaleString(),
+      new Date(r.registered_at || r.createdAt || r.created_at).toLocaleString(),
       r.check_in_time ? new Date(r.check_in_time).toLocaleString() : "No",
     ]);
 
@@ -358,7 +338,7 @@ function RegistrationsPanel({ eventId }: { eventId: string }) {
               </thead>
               <tbody>
                 {registrations.map((reg) => (
-                  <tr key={reg.id} className="border-b">
+                  <tr key={reg.registration_id || reg.id || `${reg.event_id}:${reg.user_id}`} className="border-b">
                     <td className="py-2">{reg.profile?.full_name || "N/A"}</td>
                     <td className="py-2">{reg.profile?.email || "N/A"}</td>
                     <td className="py-2">{reg.profile?.college_name || "N/A"}</td>
@@ -395,19 +375,24 @@ function JudgingManagement({ eventId }: { eventId: string }) {
   }, [eventId]);
 
   const fetchSubmissions = async () => {
-    const { data, error } = await supabase
-      .from("submissions")
-      .select(`
-        *,
-        team:teams(name)
-      `)
-      .eq("event_id", eventId)
-      .eq("status", "submitted")
-      .order("submitted_at", { ascending: false });
+    const [submissionsData, teamsData] = await Promise.all([
+      apiClient.getSubmissions({ eventId }),
+      apiClient.getTeams(eventId),
+    ]);
 
-    if (!error) {
-      setSubmissions(data || []);
-    }
+    const teams = Array.isArray(teamsData) ? teamsData : [];
+    const items = (Array.isArray(submissionsData) ? submissionsData : [])
+      .filter((sub) => sub.status === "submitted")
+      .map((sub) => ({
+        ...sub,
+        id: sub.submission_id || sub.id,
+        team: {
+          name: teams.find((team: any) => team.team_id === sub.team_id)?.name || "Unknown",
+        },
+      }))
+      .sort((a, b) => new Date(b.submitted_at || b.updated_at || 0).getTime() - new Date(a.submitted_at || a.updated_at || 0).getTime());
+
+    setSubmissions(items);
     setLoading(false);
   };
 
@@ -451,12 +436,9 @@ function EventSettings({ event, onUpdate }: { event: Event; onUpdate: () => void
   const { toast } = useToast();
 
   const handlePublish = async () => {
-    const { error } = await supabase
-      .from("events")
-      .update({ status: "published" })
-      .eq("id", event.id);
-
-    if (error) {
+    try {
+      await apiClient.updateEvent(event.id, { status: "published" });
+    } catch (error) {
       toast({ title: "Error", description: "Failed to publish event", variant: "destructive" });
     } else {
       toast({ title: "Published!", description: "Event is now live" });

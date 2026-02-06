@@ -14,6 +14,7 @@ interface AuthContextType {
   idToken: string | null;
   accessToken: string | null;
   login: () => void;
+  signup: () => void;
   logout: () => void;
   refreshTokens: () => Promise<void>;
 }
@@ -25,6 +26,7 @@ const CognitoAuthContext = createContext<AuthContextType>({
   idToken: null,
   accessToken: null,
   login: () => {},
+  signup: () => {},
   logout: () => {},
   refreshTokens: async () => {},
 });
@@ -78,6 +80,11 @@ export function CognitoAuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(() => {
     const loginUrl = `${COGNITO_DOMAIN}/login?client_id=${CLIENT_ID}&response_type=code&scope=openid+email+profile&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
     window.location.href = loginUrl;
+  }, [COGNITO_DOMAIN, CLIENT_ID, REDIRECT_URI]);
+
+  const signup = useCallback(() => {
+    const signupUrl = `${COGNITO_DOMAIN}/signup?client_id=${CLIENT_ID}&response_type=code&scope=openid+email+profile&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
+    window.location.href = signupUrl;
   }, [COGNITO_DOMAIN, CLIENT_ID, REDIRECT_URI]);
 
   const logout = useCallback(() => {
@@ -191,6 +198,7 @@ export function CognitoAuthProvider({ children }: { children: ReactNode }) {
         idToken,
         accessToken,
         login,
+        signup,
         logout,
         refreshTokens,
       }}

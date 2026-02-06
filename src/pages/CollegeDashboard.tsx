@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar, Users, BarChart3, PlusCircle, Eye, Edit, Trash2, UserCheck, UserX, AlertCircle, Share2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/integrations/api/apiClient";
 import { useToast } from "@/hooks/use-toast";
 import { EventMediaUpload } from "@/components/EventMediaUpload";
 import { EventShareDialog } from "@/components/EventShareDialog";
@@ -32,18 +32,15 @@ interface Event {
 }
 
 interface CollegeUser {
-  id: string;
-  user_id: string;
+  id?: string;
+  user_id?: string;
+  userId?: string;
   full_name: string;
   email: string;
   college_id: string | null;
   college_name: string | null;
   is_verified: boolean;
-}
-
-interface UserRole {
-  user_id: string;
-  role: string;
+  college_role?: string | null;
 }
 
 export default function CollegeDashboard() {
@@ -53,7 +50,6 @@ export default function CollegeDashboard() {
   
   const [events, setEvents] = useState<Event[]>([]);
   const [collegeUsers, setCollegeUsers] = useState<CollegeUser[]>([]);
-  const [userRoles, setUserRoles] = useState<UserRole[]>([]);
   const [registrationCounts, setRegistrationCounts] = useState<Record<string, number>>({});
   const [isAddEventOpen, setIsAddEventOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
@@ -96,103 +92,61 @@ export default function CollegeDashboard() {
       fetchEvents();
       if (canVerifyUsers) {
         fetchCollegeUsers();
-        fetchUserRoles();
       }
     }
   }, [user, profile, loading, navigate, isVerified]);
 
   const fetchEvents = async () => {
-    const { data, error } = await supabase
-      .from("events")
-      .select("*")
-      .order("start_date", { ascending: false });
-    
-    if (error) {
-      console.error("Error fetching events:", error);
-      return;
-    }
-    setEvents(data || []);
+    const eventsData = await apiClient.getEvents({ createdBy: user?.id });
+    const normalized = (Array.isArray(eventsData) ? eventsData : [])
+      .map((event) => ({
+        ...event,
+        id: event.eventId || event.id,
+        start_date: event.start_date || event.startDate,
+      }))
+      .sort((a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime());
 
-    // Fetch registration counts
+    setEvents(normalized);
+
     const counts: Record<string, number> = {};
-    for (const event of (data || [])) {
-      const { count } = await supabase
-        .from("hackathon_registrations")
-        .select("*", { count: "exact", head: true })
-        .eq("event_id", event.id);
-      counts[event.id] = count || 0;
-    }
+    await Promise.all(
+      normalized.map(async (event) => {
+        const countData = await apiClient.getRegistrationCount(event.id);
+        counts[event.id] = countData?.count || 0;
+      })
+    );
     setRegistrationCounts(counts);
   };
 
   const fetchCollegeUsers = async () => {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("user_type", "college")
-      .neq("user_id", user?.id);
-    
-    if (error) {
-      console.error("Error fetching college users:", error);
-      return;
-    }
-    setCollegeUsers(data || []);
-  };
-
-  const fetchUserRoles = async () => {
-    const { data, error } = await supabase
-      .from("user_roles")
-      .select("*");
-    
-    if (error) {
-      console.error("Error fetching roles:", error);
-      return;
-    }
-    setUserRoles(data || []);
+    const data = await apiClient.listUsers({ userType: "college" });
+    const users = Array.isArray(data) ? data : [];
+    const normalized = users
+      .map((u) => ({
+        ...u,
+        user_id: u.user_id || u.userId,
+        userId: u.userId || u.user_id,
+        id: u.id || u.userId || u.user_id,
+      }))
+      .filter((u) => u.userId !== user?.id);
+    setCollegeUsers(normalized);
   };
 
   const getUserRole = (userId: string) => {
-    const role = userRoles.find(r => r.user_id === userId);
-    return role?.role;
+    const role = collegeUsers.find((u) => u.userId === userId)?.college_role;
+    return role || null;
   };
 
   const handleVerifyUser = async (userId: string, verify: boolean) => {
-    // Find the user being verified
-    const targetUser = collegeUsers.find(u => u.user_id === userId);
-    
-    const { error } = await supabase
-      .from("profiles")
-      .update({ is_verified: verify })
-      .eq("user_id", userId);
-    
-    if (error) {
+    try {
+      await apiClient.updateUserProfile(userId, { is_verified: verify });
+    } catch (error) {
       toast({
         title: "Error",
         description: "Failed to update verification status",
         variant: "destructive",
       });
       return;
-    }
-    
-    // Send verification email if verifying (not unverifying)
-    if (verify && targetUser) {
-      try {
-        const response = await supabase.functions.invoke("send-verification-email", {
-          body: {
-            email: targetUser.email,
-            fullName: targetUser.full_name,
-            verifiedBy: profile?.full_name || "Principal",
-            userType: "college",
-            role: getUserRole(targetUser.user_id),
-          },
-        });
-        
-        if (response.error) {
-          console.error("Failed to send verification email:", response.error);
-        }
-      } catch (emailError) {
-        console.error("Error sending verification email:", emailError);
-      }
     }
     
     toast({
@@ -203,20 +157,20 @@ export default function CollegeDashboard() {
   };
 
   const handleAddEvent = async () => {
-    const { error } = await supabase.from("events").insert({
-      title: newEvent.title,
-      description: newEvent.description,
-      event_type: newEvent.event_type,
-      start_date: newEvent.start_date,
-      end_date: newEvent.end_date || null,
-      location: newEvent.location,
-      image_url: newEvent.image_url,
-      video_url: newEvent.video_url,
-      is_featured: newEvent.is_featured,
-      created_by: user?.id,
-    });
-    
-    if (error) {
+    try {
+      await apiClient.createEvent({
+        title: newEvent.title,
+        description: newEvent.description,
+        event_type: newEvent.event_type,
+        start_date: newEvent.start_date,
+        end_date: newEvent.end_date || null,
+        location: newEvent.location,
+        image_url: newEvent.image_url,
+        video_url: newEvent.video_url,
+        is_featured: newEvent.is_featured,
+        created_by: user?.id,
+      });
+    } catch (error) {
       toast({
         title: "Error",
         description: "Failed to create event",
@@ -247,9 +201,8 @@ export default function CollegeDashboard() {
   const handleUpdateEvent = async () => {
     if (!editingEvent) return;
 
-    const { error } = await supabase
-      .from("events")
-      .update({
+    try {
+      await apiClient.updateEvent(editingEvent.id, {
         title: editingEvent.title,
         description: editingEvent.description,
         event_type: editingEvent.event_type,
@@ -259,10 +212,8 @@ export default function CollegeDashboard() {
         image_url: editingEvent.image_url,
         video_url: editingEvent.video_url,
         is_featured: editingEvent.is_featured,
-      })
-      .eq("id", editingEvent.id);
-    
-    if (error) {
+      });
+    } catch (error) {
       toast({
         title: "Error",
         description: "Failed to update event",
@@ -280,9 +231,9 @@ export default function CollegeDashboard() {
   };
 
   const handleDeleteEvent = async (eventId: string) => {
-    const { error } = await supabase.from("events").delete().eq("id", eventId);
-    
-    if (error) {
+    try {
+      await apiClient.deleteEvent(eventId);
+    } catch (error) {
       toast({
         title: "Error",
         description: "Failed to delete event",
@@ -532,7 +483,7 @@ export default function CollegeDashboard() {
                   </div>
                 ) : (
                   events.map((event) => (
-                    <div key={event.id} className="flex items-center justify-between rounded-lg border p-4">
+                      <div key={event.id} className="flex items-center justify-between rounded-lg border p-4">
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <p className="font-medium">{event.title}</p>
@@ -628,12 +579,12 @@ export default function CollegeDashboard() {
                     </div>
                   ) : (
                     collegeUsers.map((u) => (
-                      <div key={u.id} className="flex items-center justify-between rounded-lg border p-4">
+                      <div key={u.id || u.user_id || u.userId} className="flex items-center justify-between rounded-lg border p-4">
                         <div>
                           <div className="flex items-center gap-2">
                             <p className="font-medium">{u.full_name}</p>
-                            {getUserRole(u.user_id) && (
-                              <Badge variant="outline">{roleLabel[getUserRole(u.user_id) as string]}</Badge>
+                            {getUserRole(u.user_id || u.userId) && (
+                              <Badge variant="outline">{roleLabel[getUserRole(u.user_id || u.userId) as string]}</Badge>
                             )}
                             {u.is_verified ? (
                               <Badge className="bg-green-500">Verified</Badge>
@@ -648,12 +599,12 @@ export default function CollegeDashboard() {
                         </div>
                         <div className="flex gap-2">
                           {u.is_verified ? (
-                            <Button variant="outline" size="sm" onClick={() => handleVerifyUser(u.user_id, false)}>
+                            <Button variant="outline" size="sm" onClick={() => handleVerifyUser(u.user_id || u.userId, false)}>
                               <UserX className="mr-1 h-4 w-4" />
                               Revoke
                             </Button>
                           ) : (
-                            <Button size="sm" onClick={() => handleVerifyUser(u.user_id, true)}>
+                            <Button size="sm" onClick={() => handleVerifyUser(u.user_id || u.userId, true)}>
                               <UserCheck className="mr-1 h-4 w-4" />
                               Verify
                             </Button>

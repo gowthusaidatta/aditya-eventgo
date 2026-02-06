@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/integrations/api/apiClient";
 import { useAuth } from "@/contexts/AuthContext";
 
 interface Notification {
-  id: string;
+  notification_id: string;
   title: string;
   message: string;
   type: string;
@@ -28,80 +28,46 @@ export function useNotifications() {
     }
 
     fetchNotifications();
-
-    // Subscribe to realtime notifications
-    const channel = supabase
-      .channel('notifications')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload) => {
-          const newNotification = payload.new as Notification;
-          setNotifications((prev) => [newNotification, ...prev]);
-          setUnreadCount((prev) => prev + 1);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
   }, [user]);
 
   const fetchNotifications = async () => {
     if (!user) return;
 
-    const { data, error } = await supabase
-      .from("notifications")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(50);
-
-    if (error) {
-      console.error("Error fetching notifications:", error);
-    } else {
+    try {
+      const data = await apiClient.getNotifications();
       setNotifications(data || []);
-      setUnreadCount(data?.filter((n) => !n.is_read).length || 0);
+      setUnreadCount(data?.filter((n: Notification) => !n.is_read).length || 0);
+    } catch (error) {
+      console.error("Error fetching notifications:", error);
     }
     setLoading(false);
   };
 
   const markAsRead = async (notificationId: string) => {
-    const { error } = await supabase
-      .from("notifications")
-      .update({ is_read: true })
-      .eq("id", notificationId);
-
-    if (!error) {
+    try {
+      await apiClient.markNotificationRead(notificationId);
       setNotifications((prev) =>
         prev.map((n) =>
-          n.id === notificationId ? { ...n, is_read: true } : n
+          n.notification_id === notificationId ? { ...n, is_read: true } : n
         )
       );
       setUnreadCount((prev) => Math.max(0, prev - 1));
+    } catch (error) {
+      console.error("Error updating notification:", error);
     }
   };
 
   const markAllAsRead = async () => {
     if (!user) return;
 
-    const { error } = await supabase
-      .from("notifications")
-      .update({ is_read: true })
-      .eq("user_id", user.id)
-      .eq("is_read", false);
-
-    if (!error) {
+    try {
+      await apiClient.markAllNotificationsRead();
       setNotifications((prev) =>
         prev.map((n) => ({ ...n, is_read: true }))
       );
       setUnreadCount(0);
+    } catch (error) {
+      console.error("Error updating notifications:", error);
     }
   };
 

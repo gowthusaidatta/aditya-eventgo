@@ -6,14 +6,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/integrations/api/apiClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Users, MessageSquare, Calendar, CheckCircle, Clock, AlertCircle } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 
 interface AssignedTeam {
-  id: string;
+  id?: string;
+  team_id?: string;
   name: string;
   description: string | null;
   status: string;
@@ -21,6 +22,7 @@ interface AssignedTeam {
   total_score: number;
   event: {
     id: string;
+    event_id?: string;
     title: string;
   };
   members: {
@@ -62,56 +64,34 @@ export default function MentorDashboard() {
     if (!user) return;
 
     try {
-      // Fetch teams where this user is the mentor
-      const { data: teamsData, error: teamsError } = await supabase
-        .from("teams")
-        .select(`
-          id,
-          name,
-          description,
-          status,
-          current_round,
-          total_score,
-          event_id
-        `)
-        .eq("mentor_id", user.id);
-
-      if (teamsError) throw teamsError;
-
-      if (!teamsData || teamsData.length === 0) {
+      const teamsData = await apiClient.getTeamsByMentor(user.id);
+      const teams = Array.isArray(teamsData) ? teamsData : [];
+      if (teams.length === 0) {
         setTeams([]);
         setLoading(false);
         return;
       }
 
-      // Fetch event details for each team
-      const eventIds = [...new Set(teamsData.map(t => t.event_id))];
-      const { data: eventsData } = await supabase
-        .from("events")
-        .select("id, title")
-        .in("id", eventIds);
+      const eventsData = await apiClient.getEvents();
+      const events = Array.isArray(eventsData) ? eventsData : [];
 
-      // Fetch team members
-      const teamIds = teamsData.map(t => t.id);
-      const { data: membersData } = await supabase
-        .from("team_members")
-        .select("team_id, user_id")
-        .in("team_id", teamIds);
+      const membersArrays = await Promise.all(
+        teams.map((team: any) => apiClient.getTeamMembers(team.team_id || team.id))
+      );
+      const membersData = membersArrays.flat();
+      const memberUserIds = [...new Set(membersData.map((m: any) => m.user_id))];
+      const profilesData = memberUserIds.length > 0 ? await apiClient.getUsersByIds(memberUserIds) : [];
 
-      // Fetch profiles for members
-      const memberUserIds = membersData?.map(m => m.user_id) || [];
-      const { data: profilesData } = await supabase
-        .from("profiles")
-        .select("user_id, full_name, email")
-        .in("user_id", memberUserIds);
-
-      // Combine data
-      const enrichedTeams: AssignedTeam[] = teamsData.map(team => ({
+      const enrichedTeams: AssignedTeam[] = teams.map((team: any) => ({
         ...team,
-        event: eventsData?.find(e => e.id === team.event_id) || { id: team.event_id, title: "Unknown Event" },
-        members: (membersData?.filter(m => m.team_id === team.id) || []).map(m => ({
+        id: team.team_id || team.id,
+        event: events.find((event: any) => (event.eventId || event.id) === team.event_id) || {
+          id: team.event_id,
+          title: "Unknown Event",
+        },
+        members: (membersData.filter((m: any) => m.team_id === (team.team_id || team.id)) || []).map((m: any) => ({
           user_id: m.user_id,
-          profile: profilesData?.find(p => p.user_id === m.user_id) || null,
+          profile: profilesData.find((p: any) => p.userId === m.user_id) || null,
         })),
       }));
 
@@ -265,7 +245,7 @@ function TeamList({ teams }: { teams: AssignedTeam[] }) {
   return (
     <div className="grid gap-4 md:grid-cols-2">
       {teams.map((team) => (
-        <TeamCard key={team.id} team={team} />
+        <TeamCard key={team.id || team.team_id} team={team} />
       ))}
     </div>
   );

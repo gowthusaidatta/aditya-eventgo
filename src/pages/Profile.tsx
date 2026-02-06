@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/integrations/api/apiClient";
 import { useToast } from "@/hooks/use-toast";
 import { User, Mail, Phone, GraduationCap, Building2, Hash, BookOpen, Calendar, Shield, CheckCircle, XCircle } from "lucide-react";
 
@@ -73,9 +73,8 @@ export default function Profile() {
     if (!user) return;
 
     setSaving(true);
-    const { error } = await supabase
-      .from("profiles")
-      .update({
+    try {
+      await apiClient.updateProfile({
         full_name: data.full_name,
         phone: data.phone || null,
         college_name: data.college_name || null,
@@ -83,10 +82,8 @@ export default function Profile() {
         roll_number: data.roll_number || null,
         graduation_year: data.graduation_year ? parseInt(data.graduation_year) : null,
         college_id: data.college_id || null,
-      })
-      .eq("user_id", user.id);
-
-    if (error) {
+      });
+    } catch (error) {
       toast({
         title: "Error",
         description: "Failed to update profile. Please try again.",

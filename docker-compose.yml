@@ -8,22 +8,37 @@ services:
     container_name: eventgo-backend
     ports:
       - "5000:5000"
+    env_file:
+      - .env.docker
     environment:
-      - NODE_ENV=development
-      - PORT=5000
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
-      - JWT_SECRET=${JWT_SECRET}
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=${PORT:-5000}
       - AWS_REGION=${AWS_REGION}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - DYNAMODB_TABLE=${DYNAMODB_TABLE}
-      - DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT:-http://dynamodb-local:8000}
+      - EVENTS_TABLE=${EVENTS_TABLE}
+      - USERS_TABLE=${USERS_TABLE}
+      - OPPORTUNITIES_TABLE=${OPPORTUNITIES_TABLE}
+      - REGISTRATIONS_TABLE=${REGISTRATIONS_TABLE}
+      - TEAMS_TABLE=${TEAMS_TABLE}
+      - TEAM_MEMBERS_TABLE=${TEAM_MEMBERS_TABLE}
+      - ROLES_TABLE=${ROLES_TABLE}
+      - USER_ROLES_TABLE=${USER_ROLES_TABLE}
+      - SCHEDULES_TABLE=${SCHEDULES_TABLE}
+      - SUBMISSIONS_TABLE=${SUBMISSIONS_TABLE}
+      - JUDGING_SCORES_TABLE=${JUDGING_SCORES_TABLE}
+      - JUDGING_RUBRICS_TABLE=${JUDGING_RUBRICS_TABLE}
+      - NOTIFICATIONS_TABLE=${NOTIFICATIONS_TABLE}
+      - CERTIFICATES_TABLE=${CERTIFICATES_TABLE}
+      - EVENT_PERMISSIONS_TABLE=${EVENT_PERMISSIONS_TABLE}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - S3_PUBLIC_BASE_URL=${S3_PUBLIC_BASE_URL}
+      - COGNITO_USER_POOL_ID=${COGNITO_USER_POOL_ID}
+      - COGNITO_CLIENT_ID=${COGNITO_CLIENT_ID}
+      - COGNITO_REGION=${COGNITO_REGION}
+      - CORS_ORIGINS=${CORS_ORIGINS}
+      - DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT}
     volumes:
       - ./backend:/app
       - /app/node_modules
-    depends_on:
-      - dynamodb-local
     networks:
       - eventgo
     healthcheck:
@@ -41,6 +56,8 @@ services:
     container_name: eventgo-frontend
     ports:
       - "3000:80"
+    env_file:
+      - .env.docker
     depends_on:
       - backend
     networks:

@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/integrations/api/apiClient";
 import { useToast } from "@/hooks/use-toast";
 import { Upload, Github, Globe, Video, FolderOpen, Send, Save } from "lucide-react";
 
@@ -14,7 +14,8 @@ interface SubmissionFormProps {
   eventId: string;
   round: 'idea' | 'prototype' | 'semifinal' | 'final';
   existingSubmission?: {
-    id: string;
+    id?: string;
+    submission_id?: string;
     title: string;
     description: string | null;
     github_url: string | null;
@@ -59,27 +60,21 @@ export function SubmissionForm({
     setLoading(true);
     try {
       if (existingSubmission) {
-        const { error } = await supabase
-          .from("submissions")
-          .update({
-            ...formData,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", existingSubmission.id);
-
-        if (error) throw error;
+        const submissionId = existingSubmission.submission_id || existingSubmission.id;
+        if (!submissionId) throw new Error("Missing submission id");
+        await apiClient.updateSubmission(submissionId, {
+          event_id: eventId,
+          ...formData,
+          status: "draft",
+        });
       } else {
-        const { error } = await supabase
-          .from("submissions")
-          .insert({
-            team_id: teamId,
-            event_id: eventId,
-            round,
-            ...formData,
-            status: "draft",
-          });
-
-        if (error) throw error;
+        await apiClient.createSubmission({
+          team_id: teamId,
+          event_id: eventId,
+          round,
+          ...formData,
+          status: "draft",
+        });
       }
 
       toast({
@@ -111,30 +106,23 @@ export function SubmissionForm({
     setLoading(true);
     try {
       if (existingSubmission) {
-        const { error } = await supabase
-          .from("submissions")
-          .update({
-            ...formData,
-            status: "submitted",
-            submitted_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", existingSubmission.id);
-
-        if (error) throw error;
+        const submissionId = existingSubmission.submission_id || existingSubmission.id;
+        if (!submissionId) throw new Error("Missing submission id");
+        await apiClient.updateSubmission(submissionId, {
+          event_id: eventId,
+          ...formData,
+          status: "submitted",
+          submitted_at: new Date().toISOString(),
+        });
       } else {
-        const { error } = await supabase
-          .from("submissions")
-          .insert({
-            team_id: teamId,
-            event_id: eventId,
-            round,
-            ...formData,
-            status: "submitted",
-            submitted_at: new Date().toISOString(),
-          });
-
-        if (error) throw error;
+        await apiClient.createSubmission({
+          team_id: teamId,
+          event_id: eventId,
+          round,
+          ...formData,
+          status: "submitted",
+          submitted_at: new Date().toISOString(),
+        });
       }
 
       toast({

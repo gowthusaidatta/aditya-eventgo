@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/integrations/api/apiClient";
 import { useToast } from "@/hooks/use-toast";
 import { X, Image, Video } from "lucide-react";
 
@@ -44,21 +44,21 @@ export function EventMediaUpload({ imageUrl, videoUrl, onImageChange, onVideoCha
 
     setUploadingImage(true);
     try {
-      const fileExt = file.name.split(".").pop();
-      const fileName = `${crypto.randomUUID()}.${fileExt}`;
-      const filePath = `images/${fileName}`;
+      const uploadMeta = await apiClient.createMediaUploadUrl({
+        fileName: file.name,
+        contentType: file.type,
+        folder: "images",
+      });
 
-      const { error: uploadError } = await supabase.storage
-        .from("event-media")
-        .upload(filePath, file);
+      await fetch(uploadMeta.uploadUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Type": file.type,
+        },
+        body: file,
+      });
 
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from("event-media")
-        .getPublicUrl(filePath);
-
-      onImageChange(publicUrl);
+      onImageChange(uploadMeta.publicUrl);
       toast({
         title: "Image uploaded",
         description: "Event image has been uploaded successfully",
@@ -101,21 +101,21 @@ export function EventMediaUpload({ imageUrl, videoUrl, onImageChange, onVideoCha
 
     setUploadingVideo(true);
     try {
-      const fileExt = file.name.split(".").pop();
-      const fileName = `${crypto.randomUUID()}.${fileExt}`;
-      const filePath = `videos/${fileName}`;
+      const uploadMeta = await apiClient.createMediaUploadUrl({
+        fileName: file.name,
+        contentType: file.type,
+        folder: "videos",
+      });
 
-      const { error: uploadError } = await supabase.storage
-        .from("event-media")
-        .upload(filePath, file);
+      await fetch(uploadMeta.uploadUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Type": file.type,
+        },
+        body: file,
+      });
 
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from("event-media")
-        .getPublicUrl(filePath);
-
-      onVideoChange(publicUrl);
+      onVideoChange(uploadMeta.publicUrl);
       toast({
         title: "Video uploaded",
         description: "Event video has been uploaded successfully",

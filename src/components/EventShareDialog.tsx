@@ -3,23 +3,21 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Copy, Share2, MessageCircle, Download } from "lucide-react";
+import { Copy, Share2, Download } from "lucide-react";
 
 interface EventShareDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   eventId: string;
   eventTitle: string;
-  eventType: string;
 }
 
-export function EventShareDialog({ open, onOpenChange, eventId, eventTitle, eventType }: EventShareDialogProps) {
+export function EventShareDialog({ open, onOpenChange, eventId, eventTitle }: EventShareDialogProps) {
   const { toast } = useToast();
 
   // Generate the registration link
   const baseUrl = window.location.origin;
-  const registrationPath = eventType === "hackathon" ? "/hackathons" : "/events";
-  const registrationLink = `${baseUrl}${registrationPath}?register=${eventId}`;
+  const registrationLink = `${baseUrl}/event/${eventId}?register=true`;
 
   const handleCopyLink = async () => {
     try {
@@ -37,28 +35,6 @@ export function EventShareDialog({ open, onOpenChange, eventId, eventTitle, even
     }
   };
 
-  const handleWhatsAppShare = () => {
-    const message = encodeURIComponent(
-      `🎉 Check out this event!\n\n📌 ${eventTitle}\n\n📝 Register here: ${registrationLink}`
-    );
-    window.open(`https://wa.me/?text=${message}`, "_blank");
-  };
-
-  const handleNativeShare = async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: eventTitle,
-          text: `Check out this event: ${eventTitle}`,
-          url: registrationLink,
-        });
-      } catch {
-        // User cancelled or share failed - this is expected behavior
-      }
-    } else {
-      handleCopyLink();
-    }
-  };
 
   const handleDownloadQR = () => {
     const svg = document.getElementById("event-qr-code");
@@ -130,20 +106,6 @@ export function EventShareDialog({ open, onOpenChange, eventId, eventTitle, even
             </div>
           </div>
 
-          {/* Share Buttons */}
-          <div className="flex flex-col gap-2">
-            <Button onClick={handleWhatsAppShare} className="gap-2 bg-green-600 hover:bg-green-700">
-              <MessageCircle className="h-4 w-4" />
-              Share on WhatsApp
-            </Button>
-            
-            {navigator.share && (
-              <Button onClick={handleNativeShare} variant="outline" className="gap-2">
-                <Share2 className="h-4 w-4" />
-                Share via Apps
-              </Button>
-            )}
-          </div>
         </div>
       </DialogContent>
     </Dialog>

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/integrations/api/apiClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { EventRegistrationDialog } from "@/components/EventRegistrationDialog";
@@ -26,18 +26,23 @@ import {
 import { format } from "date-fns";
 
 interface EventDetail {
-  id: string;
+  eventId: string;
   title: string;
   description: string | null;
-  event_type: string;
-  start_date: string;
-  end_date: string | null;
+  event_type?: string;
+  category?: string;
+  startDate?: string;
+  start_date?: string;
+  end_date?: string | null;
   location: string | null;
-  max_participants: number | null;
-  image_url: string | null;
-  video_url: string | null;
-  mode?: string;
-  status?: string;
+  max_participants?: number | null;
+  capacity?: number | null;
+  image_url?: string | null;
+  bannerUrl?: string | null;
+  video_url?: string | null;
+  mode?: string | null;
+  status?: string | null;
+  registration_deadline?: string | null;
   registration_fee?: number;
   waitlist_enabled?: boolean;
   online_link?: string | null;
@@ -47,7 +52,14 @@ interface EventDetail {
   prizes?: unknown;
   sponsors?: unknown;
   faqs?: unknown;
-  tags?: string[];
+  tags?: string[] | null;
+  venue_details?: Record<string, unknown> | null;
+  organizer?: {
+    userId?: string;
+    name?: string;
+    email?: string;
+  };
+  schedule?: Schedule[];
 }
 
 interface Schedule {
@@ -75,6 +87,7 @@ export default function EventDetail() {
   const [registrationCount, setRegistrationCount] = useState(0);
   const [isRegDialogOpen, setIsRegDialogOpen] = useState(false);
   const [isShareDialogOpen, setIsShareDialogOpen] = useState(false);
+  const [organizerName, setOrganizerName] = useState<string | null>(null);
 
   useEffect(() => {
     if (eventId) {
@@ -94,44 +107,18 @@ export default function EventDetail() {
     if (!eventId) return;
 
     try {
-      // Fetch event
-      const { data: eventData, error: eventError } = await supabase
-        .from("events")
-        .select("*")
-        .eq("id", eventId)
-        .single();
-
-      if (eventError) throw eventError;
+      const eventData = await apiClient.getEvent(eventId);
       setEvent(eventData);
 
-      // Fetch schedule
-      const { data: scheduleData } = await supabase
-        .from("event_schedule")
-        .select("*")
-        .eq("event_id", eventId)
-        .order("day_number")
-        .order("start_time");
+      setOrganizerName(eventData?.organizer?.name || null);
+      setSchedule(eventData?.schedule || []);
 
-      setSchedule(scheduleData || []);
+      const countData = await apiClient.getRegistrationCount(eventId);
+      setRegistrationCount(countData?.count || 0);
 
-      // Fetch registration count
-      const { count } = await supabase
-        .from("event_registrations")
-        .select("*", { count: "exact", head: true })
-        .eq("event_id", eventId);
-
-      setRegistrationCount(count || 0);
-
-      // Check if user is registered
       if (user) {
-        const { data: regData } = await supabase
-          .from("hackathon_registrations")
-          .select("id")
-          .eq("event_id", eventId)
-          .eq("user_id", user.id)
-          .single();
-
-        setIsRegistered(!!regData);
+        const regData = await apiClient.getRegistrations(eventId);
+        setIsRegistered(Array.isArray(regData) && regData.length > 0);
       }
     } catch (error) {
       console.error("Error fetching event:", error);
@@ -169,8 +156,32 @@ export default function EventDetail() {
     );
   }
 
-  const spotsLeft = event.max_participants ? event.max_participants - registrationCount : null;
+  const capacity = event.max_participants || event.capacity || null;
+  const spotsLeft = capacity ? capacity - registrationCount : null;
   const isFull = spotsLeft !== null && spotsLeft <= 0;
+  const isRegistrationClosed = event.registration_deadline
+    ? new Date(event.registration_deadline) < new Date()
+    : false;
+
+  const venueDetails = (event.venue_details || {}) as Record<string, unknown>;
+  const festivalCampaign =
+    (typeof venueDetails.festival === "string" && venueDetails.festival) ||
+    (typeof venueDetails.campaign === "string" && venueDetails.campaign) ||
+    (typeof venueDetails.festival_campaign === "string" && venueDetails.festival_campaign) ||
+    null;
+  const companyWebsite =
+    (typeof venueDetails.website === "string" && venueDetails.website) || event.online_link || null;
+  const participationType = event.team_size_max && event.team_size_max > 1 ? "Team" : "Individual";
+  const skillsText = event.tags && event.tags.length > 0 ? event.tags.join(", ") : "Not provided";
+  const themeText = event.tags && event.tags.length > 0 ? event.tags.join(", ") : "Not provided";
+  const registrationDeadlineText = event.registration_deadline
+    ? format(new Date(event.registration_deadline), "EEEE, MMMM d, yyyy")
+    : "Not provided";
+
+  const getYouTubeEmbedUrl = (url: string) => {
+    const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/))([\w-]{11})/);
+    return match ? `https://www.youtube.com/embed/${match[1]}` : null;
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -178,9 +189,9 @@ export default function EventDetail() {
       
       {/* Hero Section */}
       <div className="relative h-64 md:h-80 bg-gradient-to-br from-primary/20 to-secondary/20">
-        {event.image_url ? (
+        {(event.image_url || event.bannerUrl) ? (
           <img 
-            src={event.image_url} 
+            src={event.image_url || event.bannerUrl} 
             alt={event.title}
             className="w-full h-full object-cover"
           />
@@ -199,7 +210,7 @@ export default function EventDetail() {
             <Card>
               <CardHeader>
                 <div className="flex flex-wrap gap-2 mb-4">
-                  <Badge variant="secondary">{event.event_type}</Badge>
+                  <Badge variant="secondary">{event.event_type || event.category || "event"}</Badge>
                   <Badge variant="outline">{event.mode}</Badge>
                   {event.is_hackathon && <Badge className="bg-primary">Hackathon</Badge>}
                   {event.status !== "published" && (
@@ -217,7 +228,7 @@ export default function EventDetail() {
                     <Calendar className="h-5 w-5 text-primary" />
                     <div>
                       <p className="font-medium">
-                        {format(new Date(event.start_date), "EEEE, MMMM d, yyyy")}
+                        {format(new Date(event.startDate || event.start_date || ""), "EEEE, MMMM d, yyyy")}
                       </p>
                       {event.end_date && (
                         <p className="text-sm text-muted-foreground">
@@ -229,7 +240,7 @@ export default function EventDetail() {
                   <div className="flex items-center gap-3">
                     <Clock className="h-5 w-5 text-primary" />
                     <p className="font-medium">
-                      {format(new Date(event.start_date), "h:mm a")}
+                      {format(new Date(event.startDate || event.start_date || ""), "h:mm a")}
                     </p>
                   </div>
                   {event.location && (
@@ -249,6 +260,178 @@ export default function EventDetail() {
                 </div>
               </CardContent>
             </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Opportunity Details</CardTitle>
+                <CardDescription>Key information about this opportunity</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-6 md:grid-cols-2">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Logo</p>
+                  {(event.image_url || event.bannerUrl) ? (
+                    <img
+                      src={event.image_url || event.bannerUrl}
+                      alt={`${event.title} logo`}
+                      className="h-24 w-24 rounded-lg object-cover"
+                    />
+                  ) : (
+                    <div className="h-24 w-24 rounded-lg bg-muted flex items-center justify-center">
+                      <Calendar className="h-10 w-10 text-muted-foreground" />
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Supported logo image JPG, JPEG, or PNG. Max 1 MB
+                  </p>
+                  <p className="text-xs text-destructive">Logo required</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Opportunity Title</p>
+                  <p className="text-sm">{event.title}</p>
+                  <p className="text-xs text-muted-foreground">Max 190 characters</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Organisation Name</p>
+                  <p className="text-sm">{organizerName || "Not provided"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Opportunity Type</p>
+                  <p className="text-sm">{event.event_type || event.category || "Not provided"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Opportunity Category</p>
+                  <p className="text-sm">{skillsText}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Link Festival/Campaign</p>
+                  <p className="text-sm">{festivalCampaign || "Not provided"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Company Website URL</p>
+                  {companyWebsite ? (
+                    <a
+                      href={companyWebsite}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-primary hover:underline"
+                    >
+                      {companyWebsite}
+                    </a>
+                  ) : (
+                    <p className="text-sm">Not provided</p>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Event Theme</p>
+                  <p className="text-sm">{themeText}</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>About the Opportunity</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">Opportunity Description</p>
+                <p className="mt-2 text-sm">
+                  {event.description || "No description provided."}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Skills to be assessed</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">
+                  List required skills to attract participants with matching abilities or engage individuals eager to improve them
+                </p>
+                <p className="mt-2 text-sm">{skillsText}</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Opportunity Mode & Participation Type</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Participation Type</p>
+                  <p className="text-sm">{participationType}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Set team size</p>
+                  <p className="text-sm">Min: {event.team_size_min ?? 1}</p>
+                  <p className="text-sm">Max: {event.team_size_max ?? event.team_size_min ?? 1}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Mode of Opportunity</p>
+                  <p className="text-sm">{event.mode || "Not provided"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Registration Deadline</p>
+                  <p className="text-sm">{registrationDeadlineText}</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Registration Criteria</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div>
+                  <p className="text-sm font-medium">Who can register?</p>
+                  <p className="text-sm text-muted-foreground">Everyone can apply</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium">College/Organization</p>
+                  <p className="text-sm text-muted-foreground">Default: Everyone can apply</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Gender</p>
+                  <p className="text-sm text-muted-foreground">Default: Everyone can apply</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {((event.image_url || event.bannerUrl) || event.video_url) && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Event Media</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-4 md:grid-cols-2">
+                  {(event.image_url || event.bannerUrl) && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">Photo</p>
+                      <img
+                        src={event.image_url || event.bannerUrl}
+                        alt={`${event.title} cover`}
+                        className="w-full rounded-lg object-cover"
+                      />
+                    </div>
+                  )}
+                  {event.video_url && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">Video</p>
+                      {getYouTubeEmbedUrl(event.video_url) ? (
+                        <iframe
+                          className="h-56 w-full rounded-lg"
+                          src={getYouTubeEmbedUrl(event.video_url) as string}
+                          title={`${event.title} video`}
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                        />
+                      ) : (
+                        <video className="w-full rounded-lg" controls src={event.video_url} />
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
             {/* Schedule */}
             {schedule.length > 0 && (
@@ -289,13 +472,13 @@ export default function EventDetail() {
                 </TabsList>
                 <TabsContent value="team">
                   <TeamManagement 
-                    eventId={event.id} 
+                    eventId={event.eventId} 
                     teamSizeMin={event.team_size_min}
                     teamSizeMax={event.team_size_max}
                   />
                 </TabsContent>
                 <TabsContent value="leaderboard">
-                  <Leaderboard eventId={event.id} />
+                  <Leaderboard eventId={event.eventId} />
                 </TabsContent>
                 <TabsContent value="prizes">
                   <Card>
@@ -371,14 +554,14 @@ export default function EventDetail() {
                     <p className="font-medium text-primary">✓ You're registered!</p>
                   </div>
                 ) : (
-                  <Button 
-                    className="w-full" 
-                    size="lg"
-                    disabled={isFull}
-                    onClick={() => setIsRegDialogOpen(true)}
-                  >
-                    {isFull ? "Event Full" : "Register Now"}
-                  </Button>
+                    <Button
+                      className="w-full"
+                      size="lg"
+                      disabled={isFull || isRegistrationClosed}
+                      onClick={() => setIsRegDialogOpen(true)}
+                    >
+                      {isRegistrationClosed ? "Registration Closed" : isFull ? "Event Full" : "Register Now"}
+                    </Button>
                 )}
 
                 <Separator />
@@ -429,9 +612,8 @@ export default function EventDetail() {
 
       {/* Share Dialog */}
       <EventShareDialog
-        eventId={event.id}
+        eventId={event.eventId}
         eventTitle={event.title}
-        eventType={event.event_type}
         open={isShareDialogOpen}
         onOpenChange={setIsShareDialogOpen}
       />

@@ -189,9 +189,13 @@ nano .env.local
 
 **Required settings:**
 ```env
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=your-anon-key
 AWS_REGION=us-east-1
+EVENTS_TABLE=your-events-table
+USERS_TABLE=your-users-table
+REGISTRATIONS_TABLE=your-registrations-table
+COGNITO_USER_POOL_ID=your-pool-id
+COGNITO_CLIENT_ID=your-client-id
+COGNITO_REGION=us-east-1
 JWT_SECRET=your-secret-key-min-32-chars
 ```
 

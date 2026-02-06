@@ -6,13 +6,14 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/integrations/api/apiClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Trash2, Users, Shield, Search } from "lucide-react";
 
 interface EventPermission {
-  id: string;
+  id?: string;
+  permission_id?: string;
   user_id: string;
   permission_type: string;
   granted_by: string;
@@ -27,6 +28,7 @@ interface EventPermission {
 
 interface CollegeUser {
   user_id: string;
+  userId?: string;
   full_name: string;
   email: string;
   role?: string;
@@ -54,25 +56,17 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
 
   const fetchPermissions = async () => {
     try {
-      const { data, error } = await supabase
-        .from("event_permissions")
-        .select("*")
-        .eq("event_id", eventId)
-        .eq("is_active", true);
+      const data = await apiClient.request("GET", `/events/${eventId}/permissions`);
+      const items = Array.isArray(data) ? data : [];
 
-      if (error) throw error;
+      if (items.length > 0) {
+        const userIds = items.map(p => p.user_id).filter(Boolean);
+        const profiles = userIds.length > 0 ? await apiClient.getUsersByIds(userIds) : [];
 
-      // Fetch user details for each permission
-      if (data && data.length > 0) {
-        const userIds = data.map(p => p.user_id);
-        const { data: profiles } = await supabase
-          .from("profiles")
-          .select("user_id, full_name, email, user_type")
-          .in("user_id", userIds);
-
-        const enrichedPermissions = data.map(p => ({
+        const enrichedPermissions = items.map(p => ({
           ...p,
-          user: profiles?.find(profile => profile.user_id === p.user_id),
+          id: p.permission_id || p.id,
+          user: profiles?.find(profile => profile.userId === p.user_id),
         }));
 
         setPermissions(enrichedPermissions);
@@ -88,24 +82,16 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
 
   const fetchCollegeUsers = async () => {
     try {
-      // Fetch college users and their roles
-      const { data: profiles } = await supabase
-        .from("profiles")
-        .select("user_id, full_name, email, user_type")
-        .eq("user_type", "college");
-
-      const { data: roles } = await supabase
-        .from("user_roles")
-        .select("user_id, role");
-
-      const usersWithRoles = (profiles || []).map(p => ({
-        user_id: p.user_id,
+      const profiles = await apiClient.listUsers({ userType: "college" });
+      const usersWithRoles = (Array.isArray(profiles) ? profiles : []).map(p => ({
+        user_id: p.user_id || p.userId,
+        userId: p.userId || p.user_id,
         full_name: p.full_name,
         email: p.email,
-        role: roles?.find(r => r.user_id === p.user_id)?.role,
+        role: p.college_role || p.role,
       }));
 
-      setCollegeUsers(usersWithRoles);
+      setCollegeUsers(usersWithRoles.filter((u) => u.user_id));
     } catch (error) {
       console.error("Error fetching users:", error);
     }
@@ -115,24 +101,10 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
     if (!selectedUser || !user) return;
 
     try {
-      const { error } = await supabase.from("event_permissions").insert({
-        event_id: eventId,
+      await apiClient.request("POST", `/events/${eventId}/permissions`, {
         user_id: selectedUser,
         permission_type: selectedPermission,
-        granted_by: user.id,
       });
-
-      if (error) {
-        if (error.code === "23505") {
-          toast({
-            title: "Already granted",
-            description: "This user already has this permission",
-            variant: "destructive",
-          });
-          return;
-        }
-        throw error;
-      }
 
       toast({
         title: "Permission granted",
@@ -141,7 +113,15 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
 
       setSelectedUser("");
       fetchPermissions();
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.response?.status === 409) {
+        toast({
+          title: "Already granted",
+          description: "This user already has this permission",
+          variant: "destructive",
+        });
+        return;
+      }
       console.error("Error granting permission:", error);
       toast({
         title: "Error",
@@ -153,12 +133,7 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
 
   const revokePermission = async (permissionId: string) => {
     try {
-      const { error } = await supabase
-        .from("event_permissions")
-        .update({ is_active: false })
-        .eq("id", permissionId);
-
-      if (error) throw error;
+      await apiClient.request("DELETE", `/events/${eventId}/permissions/${permissionId}`);
 
       toast({
         title: "Permission revoked",
@@ -280,7 +255,7 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
             <div className="space-y-2">
               {permissions.map((perm) => (
                 <div
-                  key={perm.id}
+                  key={perm.id || perm.permission_id}
                   className="flex items-center justify-between p-3 border rounded-lg"
                 >
                   <div className="flex items-center gap-3">
@@ -293,7 +268,7 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => revokePermission(perm.id)}
+                    onClick={() => revokePermission(perm.id || perm.permission_id || "")}
                   >
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>

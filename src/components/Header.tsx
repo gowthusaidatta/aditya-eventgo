@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
-import { signOut } from "@/lib/auth";
+import { useCognitoAuth } from "@/contexts/CognitoAuthContext";
 import { Menu, X, LogOut, User, LayoutDashboard } from "lucide-react";
 import { useState } from "react";
 import {
@@ -16,11 +16,12 @@ import adityaLogo from "@/assets/aditya-university-logo.jpg";
 
 export function Header() {
   const { user, profile } = useAuth();
+  const { logout } = useCognitoAuth();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const handleSignOut = async () => {
-    await signOut();
+    logout();
     navigate("/");
   };
 

@@ -195,7 +195,7 @@ export function TeamManagement({ eventId, teamSizeMin = 1, teamSizeMax = 5 }: Te
           <h4 className="font-medium mb-3">Team Members ({members.length}/{teamSizeMax})</h4>
           <div className="space-y-2">
             {members.map((member) => (
-              <div key={member.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-muted/50">
+              <div key={member.user_id} className="flex items-center justify-between p-2 rounded-lg hover:bg-muted/50">
                 <div className="flex items-center gap-3">
                   <Avatar className="h-8 w-8">
                     <AvatarImage src={member.profile?.avatar_url || ""} />
@@ -229,7 +229,7 @@ export function TeamManagement({ eventId, teamSizeMin = 1, teamSizeMax = 5 }: Te
                       </AlertDialogHeader>
                       <AlertDialogFooter>
                         <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={() => removeMember(member.id)}>
+                        <AlertDialogAction onClick={() => removeMember(member.user_id)}>
                           Remove
                         </AlertDialogAction>
                       </AlertDialogFooter>

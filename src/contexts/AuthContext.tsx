@@ -1,7 +1,13 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { User, Session } from "@supabase/supabase-js";
-import { supabase } from "@/integrations/supabase/client";
-import { getUserProfile, getUserRole, UserType, CollegeRole } from "@/lib/auth";
+import { apiClient } from "@/integrations/api/apiClient";
+import { useCognitoAuth } from "@/contexts/CognitoAuthContext";
+import { UserType, CollegeRole } from "@/lib/auth";
+
+interface AuthUser {
+  id: string;
+  email: string;
+  name?: string;
+}
 
 interface Profile {
   id: string;
@@ -17,11 +23,11 @@ interface Profile {
   branch: string | null;
   college_id: string | null;
   is_verified: boolean;
+  college_role?: CollegeRole | null;
 }
 
 interface AuthContextType {
-  user: User | null;
-  session: Session | null;
+  user: AuthUser | null;
   profile: Profile | null;
   collegeRole: CollegeRole | null;
   loading: boolean;
@@ -38,8 +44,8 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
+  const { user: cognitoUser, isAuthenticated, loading: cognitoLoading } = useCognitoAuth();
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [collegeRole, setCollegeRole] = useState<CollegeRole | null>(null);
   const [loading, setLoading] = useState(true);
@@ -48,12 +54,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!user) return;
     
     try {
-      const profileData = await getUserProfile(user.id);
+      let profileData = await apiClient.getProfile();
+
+      if (!profileData?.user_type) {
+        profileData = await apiClient.updateProfile({
+          user_type: "student",
+          full_name: user.name || user.email,
+          email: user.email,
+          is_verified: true,
+        });
+      }
+
       setProfile(profileData as Profile);
-      
-      if (profileData.user_type === "college") {
-        const role = await getUserRole(user.id);
-        setCollegeRole(role || null);
+
+      if (profileData?.user_type === "college") {
+        setCollegeRole(profileData.college_role || null);
+      } else {
+        setCollegeRole(null);
       }
     } catch (error) {
       console.error("Error fetching profile:", error);
@@ -61,50 +78,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    // Set up auth state listener BEFORE checking initial session
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
+    if (cognitoLoading) return;
 
-        if (session?.user) {
-          // Defer profile fetch to avoid blocking auth state change
-          setTimeout(async () => {
-            try {
-              const profileData = await getUserProfile(session.user.id);
-              setProfile(profileData as Profile);
-
-              if (profileData.user_type === "college") {
-                const role = await getUserRole(session.user.id);
-                setCollegeRole(role || null);
-              }
-            } catch (error) {
-              console.error("Error fetching profile:", error);
-            }
-            setLoading(false);
-          }, 0);
-        } else {
-          setProfile(null);
-          setCollegeRole(null);
-          setLoading(false);
-        }
-      }
-    );
-
-    // Check initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (!session) {
-        setLoading(false);
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
+    if (isAuthenticated && cognitoUser) {
+      setUser({
+        id: cognitoUser.sub,
+        email: cognitoUser.email,
+        name: cognitoUser.name,
+      });
+      refreshProfile().finally(() => setLoading(false));
+    } else {
+      setUser(null);
+      setProfile(null);
+      setCollegeRole(null);
+      setLoading(false);
+    }
+  }, [cognitoLoading, isAuthenticated, cognitoUser]);
 
   return (
-    <AuthContext.Provider value={{ user, session, profile, collegeRole, loading, refreshProfile }}>
+    <AuthContext.Provider value={{ user, profile, collegeRole, loading, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

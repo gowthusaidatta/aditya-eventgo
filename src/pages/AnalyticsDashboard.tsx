@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/integrations/api/apiClient";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -103,14 +103,22 @@ export default function AnalyticsDashboard() {
   }, [user, profile, loading, navigate, timeRange]);
 
   const fetchAnalytics = async () => {
-    await Promise.all([
-      fetchRegistrationStats(),
-      fetchEventStats(),
-      fetchUserStats(),
-      fetchDailyRegistrations(),
-      fetchEventTypeDistribution(),
-      fetchTopEvents(),
+    const [eventsData, usersData, registrationsData] = await Promise.all([
+      apiClient.getEvents(),
+      apiClient.listUsers(),
+      apiClient.getAllRegistrations(),
     ]);
+
+    const events = Array.isArray(eventsData) ? eventsData : [];
+    const users = Array.isArray(usersData) ? usersData : [];
+    const registrations = Array.isArray(registrationsData) ? registrationsData : [];
+
+    fetchRegistrationStats(registrations, events);
+    fetchEventStats(events);
+    fetchUserStats(users);
+    fetchDailyRegistrations(registrations, events);
+    fetchEventTypeDistribution(events);
+    fetchTopEvents(registrations, events);
   };
 
   const getDateRange = () => {
@@ -120,46 +128,45 @@ export default function AnalyticsDashboard() {
     return { startDate, endDate: now, days };
   };
 
-  const fetchRegistrationStats = async () => {
+  const fetchRegistrationStats = (registrations: any[], events: any[]) => {
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
 
-    // Fetch hackathon registrations
-    const { count: hackathonCount } = await supabase
-      .from("hackathon_registrations")
-      .select("*", { count: "exact" });
+    const eventMap = new Map<string, any>();
+    events.forEach((event) => eventMap.set(event.eventId || event.id, event));
 
-    // Fetch event registrations
-    const { count: eventCount } = await supabase
-      .from("event_registrations")
-      .select("*", { count: "exact" });
+    const isHackathon = (eventId: string) => {
+      const event = eventMap.get(eventId);
+      return event?.is_hackathon || event?.event_type === "hackathon";
+    };
 
-    // This week's registrations
-    const { count: hackathonThisWeek } = await supabase
-      .from("hackathon_registrations")
-      .select("*", { count: "exact" })
-      .gte("registered_at", weekAgo.toISOString());
+    const registrationsWithDates = registrations.map((reg) => ({
+      ...reg,
+      timestamp: new Date(reg.registered_at || reg.createdAt || reg.created_at || 0),
+      isHackathon: isHackathon(reg.event_id),
+    }));
 
-    const { count: eventThisWeek } = await supabase
-      .from("event_registrations")
-      .select("*", { count: "exact" })
-      .gte("registered_at", weekAgo.toISOString());
+    const hackathonCount = registrationsWithDates.filter((reg) => reg.isHackathon).length;
+    const eventCount = registrationsWithDates.filter((reg) => !reg.isHackathon).length;
 
-    // Last week's registrations
-    const { count: hackathonLastWeek } = await supabase
-      .from("hackathon_registrations")
-      .select("*", { count: "exact" })
-      .gte("registered_at", twoWeeksAgo.toISOString())
-      .lt("registered_at", weekAgo.toISOString());
+    const hackathonThisWeek = registrationsWithDates.filter(
+      (reg) => reg.isHackathon && reg.timestamp >= weekAgo
+    ).length;
+    const eventThisWeek = registrationsWithDates.filter(
+      (reg) => !reg.isHackathon && reg.timestamp >= weekAgo
+    ).length;
 
-    const { count: eventLastWeek } = await supabase
-      .from("event_registrations")
-      .select("*", { count: "exact" })
-      .gte("registered_at", twoWeeksAgo.toISOString())
-      .lt("registered_at", weekAgo.toISOString());
+    const hackathonLastWeek = registrationsWithDates.filter(
+      (reg) =>
+        reg.isHackathon && reg.timestamp >= twoWeeksAgo && reg.timestamp < weekAgo
+    ).length;
+    const eventLastWeek = registrationsWithDates.filter(
+      (reg) =>
+        !reg.isHackathon && reg.timestamp >= twoWeeksAgo && reg.timestamp < weekAgo
+    ).length;
 
-    const thisWeek = (hackathonThisWeek || 0) + (eventThisWeek || 0);
-    const lastWeek = (hackathonLastWeek || 0) + (eventLastWeek || 0);
+    const thisWeek = hackathonThisWeek + eventThisWeek;
+    const lastWeek = hackathonLastWeek + eventLastWeek;
     const growthPercentage = lastWeek > 0 ? ((thisWeek - lastWeek) / lastWeek) * 100 : thisWeek > 0 ? 100 : 0;
 
     setRegistrationStats({
@@ -172,28 +179,23 @@ export default function AnalyticsDashboard() {
     });
   };
 
-  const fetchEventStats = async () => {
+  const fetchEventStats = (events: any[]) => {
     const now = new Date().toISOString();
-    
-    const { count: totalEvents } = await supabase
-      .from("events")
-      .select("*", { count: "exact" });
 
-    const { count: activeEvents } = await supabase
-      .from("events")
-      .select("*", { count: "exact" })
-      .lte("start_date", now)
-      .or(`end_date.gte.${now},end_date.is.null`);
-
-    const { count: completedEvents } = await supabase
-      .from("events")
-      .select("*", { count: "exact" })
-      .lt("end_date", now);
-
-    const { count: upcomingEvents } = await supabase
-      .from("events")
-      .select("*", { count: "exact" })
-      .gt("start_date", now);
+    const totalEvents = events.length;
+    const activeEvents = events.filter((event) => {
+      const start = event.start_date || event.startDate;
+      const end = event.end_date || event.endDate;
+      return start <= now && (!end || end >= now);
+    }).length;
+    const completedEvents = events.filter((event) => {
+      const end = event.end_date || event.endDate;
+      return end && end < now;
+    }).length;
+    const upcomingEvents = events.filter((event) => {
+      const start = event.start_date || event.startDate;
+      return start && start > now;
+    }).length;
 
     setEventStats({
       totalEvents: totalEvents || 0,
@@ -203,13 +205,9 @@ export default function AnalyticsDashboard() {
     });
   };
 
-  const fetchUserStats = async () => {
+  const fetchUserStats = (users: any[]) => {
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
-
-    const { data: users } = await supabase
-      .from("profiles")
-      .select("*");
 
     const allUsers = users || [];
     const students = allUsers.filter(u => u.user_type === "student").length;
@@ -217,11 +215,11 @@ export default function AnalyticsDashboard() {
     const verifiedUsers = allUsers.filter(u => u.is_verified).length;
     
     const newThisWeek = allUsers.filter(u => 
-      new Date(u.created_at) >= weekAgo
+      new Date(u.created_at || u.createdAt || 0) >= weekAgo
     ).length;
     
     const newLastWeek = allUsers.filter(u => 
-      new Date(u.created_at) >= twoWeeksAgo && new Date(u.created_at) < weekAgo
+      new Date(u.created_at || u.createdAt || 0) >= twoWeeksAgo && new Date(u.created_at || u.createdAt || 0) < weekAgo
     ).length;
 
     const userGrowthPercentage = newLastWeek > 0 
@@ -238,19 +236,21 @@ export default function AnalyticsDashboard() {
     });
   };
 
-  const fetchDailyRegistrations = async () => {
+  const fetchDailyRegistrations = (registrations: any[], events: any[]) => {
     const { startDate, days } = getDateRange();
-    
-    // Fetch all registrations in range
-    const { data: hackathonRegs } = await supabase
-      .from("hackathon_registrations")
-      .select("registered_at")
-      .gte("registered_at", startDate.toISOString());
 
-    const { data: eventRegs } = await supabase
-      .from("event_registrations")
-      .select("registered_at")
-      .gte("registered_at", startDate.toISOString());
+    const eventMap = new Map<string, any>();
+    events.forEach((event) => eventMap.set(event.eventId || event.id, event));
+
+    const categorizedRegs = registrations
+      .map((reg) => {
+        const event = eventMap.get(reg.event_id);
+        return {
+          registered_at: reg.registered_at || reg.createdAt || reg.created_at,
+          isHackathon: event?.is_hackathon || event?.event_type === "hackathon",
+        };
+      })
+      .filter((reg) => new Date(reg.registered_at) >= startDate);
 
     // Group by date
     const dateMap = new Map<string, { registrations: number; hackathons: number; events: number }>();
@@ -263,7 +263,7 @@ export default function AnalyticsDashboard() {
     }
 
     // Count hackathon registrations
-    (hackathonRegs || []).forEach(reg => {
+    categorizedRegs.filter((reg) => reg.isHackathon).forEach(reg => {
       const dateStr = reg.registered_at.split("T")[0];
       const existing = dateMap.get(dateStr);
       if (existing) {
@@ -273,7 +273,7 @@ export default function AnalyticsDashboard() {
     });
 
     // Count event registrations
-    (eventRegs || []).forEach(reg => {
+    categorizedRegs.filter((reg) => !reg.isHackathon).forEach(reg => {
       const dateStr = reg.registered_at.split("T")[0];
       const existing = dateMap.get(dateStr);
       if (existing) {
@@ -292,11 +292,7 @@ export default function AnalyticsDashboard() {
     setDailyRegistrations(dailyData);
   };
 
-  const fetchEventTypeDistribution = async () => {
-    const { data: events } = await supabase
-      .from("events")
-      .select("event_type");
-
+  const fetchEventTypeDistribution = (events: any[]) => {
     const typeCount = new Map<string, number>();
     (events || []).forEach(event => {
       const count = typeCount.get(event.event_type) || 0;
@@ -314,23 +310,10 @@ export default function AnalyticsDashboard() {
     setEventTypeDistribution(distribution);
   };
 
-  const fetchTopEvents = async () => {
-    // Get registration counts per event
-    const { data: hackathonRegs } = await supabase
-      .from("hackathon_registrations")
-      .select("event_id");
-
-    const { data: eventRegs } = await supabase
-      .from("event_registrations")
-      .select("event_id");
-
+  const fetchTopEvents = (registrations: any[], events: any[]) => {
     const eventCounts = new Map<string, number>();
-    
-    (hackathonRegs || []).forEach(reg => {
-      eventCounts.set(reg.event_id, (eventCounts.get(reg.event_id) || 0) + 1);
-    });
-    
-    (eventRegs || []).forEach(reg => {
+
+    (registrations || []).forEach(reg => {
       eventCounts.set(reg.event_id, (eventCounts.get(reg.event_id) || 0) + 1);
     });
 
@@ -341,15 +324,10 @@ export default function AnalyticsDashboard() {
       return;
     }
 
-    const { data: events } = await supabase
-      .from("events")
-      .select("id, title")
-      .in("id", eventIds);
-
     const topEventsList = (events || [])
       .map(event => ({
         title: event.title,
-        registrations: eventCounts.get(event.id) || 0,
+        registrations: eventCounts.get(event.eventId || event.id) || 0,
       }))
       .sort((a, b) => b.registrations - a.registrations)
       .slice(0, 5);

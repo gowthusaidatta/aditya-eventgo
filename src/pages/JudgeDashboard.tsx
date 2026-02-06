@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 
 import { Badge } from "@/components/ui/badge";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/integrations/api/apiClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Slider } from "@/components/ui/slider";
@@ -19,7 +19,10 @@ import {
 } from "lucide-react";
 
 interface Submission {
-  id: string;
+  id?: string;
+  submission_id?: string;
+  event_id?: string;
+  team_id?: string;
   title: string;
   description: string | null;
   github_url: string | null;
@@ -34,6 +37,7 @@ interface Submission {
 
 interface Rubric {
   id: string;
+  rubric_id?: string;
   criteria_name: string;
   description: string | null;
   max_score: number;
@@ -65,15 +69,11 @@ export default function JudgeDashboard() {
   const fetchAssignedEvents = async () => {
     if (!user) return;
 
-    // Get events where user is assigned as judge
-    const { data: roles } = await supabase
-      .from("platform_roles")
-      .select("event_id")
-      .eq("user_id", user.id)
-      .eq("role", "judge")
-      .eq("is_active", true);
-
-    const eventIds = roles?.map(r => r.event_id).filter(Boolean) as string[] || [];
+    const roles = await apiClient.getPlatformRoles({ role: "judge" });
+    const eventIds = (Array.isArray(roles) ? roles : [])
+      .filter((r) => r.is_active !== false)
+      .map((r) => r.event_id)
+      .filter(Boolean) as string[];
     setAssignedEvents(eventIds);
 
     if (eventIds.length > 0) {
@@ -84,22 +84,30 @@ export default function JudgeDashboard() {
   };
 
   const fetchSubmissions = async (eventIds: string[]) => {
-    const { data, error } = await supabase
-      .from("submissions")
-      .select(`
-        *,
-        team:teams(name)
-      `)
-      .in("event_id", eventIds)
-      .eq("status", "submitted")
-      .order("submitted_at", { ascending: true });
+    const submissionsArrays = await Promise.all(
+      eventIds.map((eventId) => apiClient.getSubmissions({ eventId }))
+    );
+    const teamArrays = await Promise.all(eventIds.map((eventId) => apiClient.getTeams(eventId)));
 
-    if (!error) {
-      setSubmissions(data || []);
-      if (data && data.length > 0) {
-        setSelectedSubmission(data[0]);
-        fetchRubricsAndScores(data[0]);
-      }
+    const teamsById = new Map<string, any>();
+    teamArrays.flat().forEach((team: any) => {
+      if (team?.team_id) teamsById.set(team.team_id, team);
+    });
+
+    const submissions = submissionsArrays
+      .flat()
+      .filter((sub: any) => sub.status === "submitted")
+      .map((sub: any) => ({
+        ...sub,
+        id: sub.submission_id || sub.id,
+        team: { name: teamsById.get(sub.team_id)?.name || "Unknown" },
+      }))
+      .sort((a, b) => new Date(a.submitted_at || a.updated_at || 0).getTime() - new Date(b.submitted_at || b.updated_at || 0).getTime());
+
+    setSubmissions(submissions);
+    if (submissions.length > 0) {
+      setSelectedSubmission(submissions[0]);
+      fetchRubricsAndScores(submissions[0]);
     }
     setLoading(false);
   };
@@ -107,35 +115,30 @@ export default function JudgeDashboard() {
   const fetchRubricsAndScores = async (submission: Submission) => {
     if (!user) return;
 
-    // Get event_id from submission
-    const { data: subData } = await supabase
-      .from("submissions")
-      .select("event_id")
-      .eq("id", submission.id)
-      .single();
+    const eventId = submission.event_id;
+    if (!eventId) return;
 
-    if (!subData) return;
+    const [rubricsData, existingScores] = await Promise.all([
+      apiClient.getRubrics(eventId),
+      apiClient.getJudgingScores(submission.submission_id || submission.id || ""),
+    ]);
 
-    // Fetch rubrics
-    const { data: rubricsData } = await supabase
-      .from("judging_rubrics")
-      .select("*")
-      .eq("event_id", subData.event_id)
-      .order("sort_order");
-
-    setRubrics(rubricsData || []);
-
-    // Fetch existing scores
-    const { data: existingScores } = await supabase
-      .from("judge_scores")
-      .select("*")
-      .eq("submission_id", submission.id)
-      .eq("judge_id", user.id);
+    const normalizedRubrics = (Array.isArray(rubricsData) ? rubricsData : []).map(
+      (rubric: Rubric) => ({
+        ...rubric,
+        id: rubric.id || rubric.rubric_id || "",
+      })
+    );
+    setRubrics(normalizedRubrics);
 
     const scoresMap: Record<string, { score: number; feedback: string }> = {};
-    existingScores?.forEach((s) => {
-      scoresMap[s.rubric_id] = { score: s.score, feedback: s.feedback || "" };
-    });
+    (Array.isArray(existingScores) ? existingScores : [])
+      .filter((score: any) => score.judge_id === user.id)
+      .forEach((score: any) => {
+        const rubricId = score.rubric_id || score.id;
+        if (!rubricId) return;
+        scoresMap[rubricId] = { score: score.score, feedback: score.feedback || "" };
+      });
     setScores(scoresMap);
   };
 
@@ -164,22 +167,18 @@ export default function JudgeDashboard() {
 
     setSaving(true);
     try {
+      const submissionId = selectedSubmission.submission_id || selectedSubmission.id;
       for (const rubric of rubrics) {
         const scoreData = scores[rubric.id];
         if (scoreData) {
-          const { error } = await supabase
-            .from("judge_scores")
-            .upsert({
-              submission_id: selectedSubmission.id,
-              judge_id: user.id,
-              rubric_id: rubric.id,
-              score: scoreData.score,
-              feedback: scoreData.feedback || null,
-            }, {
-              onConflict: 'submission_id,judge_id,rubric_id'
-            });
-
-          if (error) throw error;
+          await apiClient.saveJudgingScore({
+            submission_id: submissionId,
+            rubric_id: rubric.id,
+            score: scoreData.score,
+            feedback: scoreData.feedback || null,
+            event_id: selectedSubmission.event_id,
+            team_id: selectedSubmission.team_id,
+          });
         }
       }
 

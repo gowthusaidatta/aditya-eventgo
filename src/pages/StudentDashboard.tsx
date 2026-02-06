@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, Code, GraduationCap, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/integrations/api/apiClient";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -33,24 +33,12 @@ interface Registration {
   };
 }
 
-interface HackathonRegistration {
-  id: string;
-  event_id: string;
-  registered_at: string;
-  status: string | null;
-  events?: {
-    title: string;
-    start_date: string;
-    event_type: string;
-  };
-}
-
 export default function StudentDashboard() {
   const { user, profile, loading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [registrations, setRegistrations] = useState<Registration[]>([]);
-  const [hackathonRegs, setHackathonRegs] = useState<HackathonRegistration[]>([]);
+  const [hackathonRegs, setHackathonRegs] = useState<Registration[]>([]);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -65,38 +53,40 @@ export default function StudentDashboard() {
   }, [user, profile, loading, navigate]);
 
   const fetchRegistrations = async () => {
-    // Fetch event registrations
-    const { data: eventRegs } = await supabase
-      .from("event_registrations")
-      .select(`
-        *,
-        events (title, start_date, event_type)
-      `)
-      .eq("user_id", user?.id);
+    const registrationsData = await apiClient.getRegistrations();
+    const registrations = Array.isArray(registrationsData) ? registrationsData : [];
+    const eventsData = await apiClient.getEvents();
+    const events = Array.isArray(eventsData) ? eventsData : [];
 
-    // Fetch hackathon registrations
-    const { data: hackRegs } = await supabase
-      .from("hackathon_registrations")
-      .select(`
-        *,
-        events (title, start_date, event_type)
-      `)
-      .eq("user_id", user?.id);
+    const withEvent = registrations.map((reg) => {
+      const eventMatch = events.find((event: any) => (event.eventId || event.id) === reg.event_id);
+      return {
+        ...reg,
+        id: reg.registration_id || reg.id || `${reg.event_id}:${reg.user_id}`,
+        registered_at: reg.registered_at || reg.createdAt || reg.created_at,
+        status: reg.registration_status || reg.status,
+        events: eventMatch ? {
+          title: eventMatch.title,
+          start_date: eventMatch.start_date || eventMatch.startDate,
+          event_type: eventMatch.event_type,
+          is_hackathon: eventMatch.is_hackathon,
+        } : undefined,
+      };
+    });
 
-    setRegistrations(eventRegs || []);
-    setHackathonRegs(hackRegs || []);
+    const eventRegs = withEvent.filter((reg) => !reg.events?.is_hackathon && reg.events?.event_type !== "hackathon");
+    const hackRegs = withEvent.filter((reg) => reg.events?.is_hackathon || reg.events?.event_type === "hackathon");
+
+    setRegistrations(eventRegs);
+    setHackathonRegs(hackRegs);
   };
 
-  const handleCancelRegistration = async (registrationId: string, type: "event" | "hackathon", eventTitle: string) => {
-    setCancellingId(registrationId);
-    
-    const table = type === "hackathon" ? "hackathon_registrations" : "event_registrations";
-    const { error } = await supabase
-      .from(table)
-      .delete()
-      .eq("id", registrationId);
+  const handleCancelRegistration = async (eventId: string, eventTitle: string) => {
+    setCancellingId(eventId);
 
-    if (error) {
+    try {
+      await apiClient.cancelRegistration(eventId);
+    } catch (error) {
       toast({
         title: "Error",
         description: "Failed to cancel registration. Please try again.",
@@ -123,7 +113,7 @@ export default function StudentDashboard() {
   const allRegistrations = [
     ...registrations.map(r => ({ ...r, type: "event" as const })),
     ...hackathonRegs.map(r => ({ ...r, type: "hackathon" as const })),
-  ].sort((a, b) => new Date(b.registered_at).getTime() - new Date(a.registered_at).getTime());
+  ].sort((a, b) => new Date(b.registered_at || b.createdAt || b.created_at || 0).getTime() - new Date(a.registered_at || a.createdAt || a.created_at || 0).getTime());
 
   const upcomingEvents = allRegistrations.filter(
     r => r.events && new Date(r.events.start_date) > new Date()
@@ -215,7 +205,7 @@ export default function StudentDashboard() {
                             variant="ghost" 
                             size="icon" 
                             className="h-8 w-8 text-destructive hover:bg-destructive/10"
-                            disabled={cancellingId === reg.id}
+                            disabled={cancellingId === reg.event_id}
                           >
                             <X className="h-4 w-4" />
                           </Button>
@@ -231,7 +221,7 @@ export default function StudentDashboard() {
                             <AlertDialogCancel>Keep Registration</AlertDialogCancel>
                             <AlertDialogAction 
                               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                              onClick={() => handleCancelRegistration(reg.id, reg.type, reg.events?.title || "")}
+                              onClick={() => handleCancelRegistration(reg.event_id, reg.events?.title || "")}
                             >
                               Cancel Registration
                             </AlertDialogAction>
@@ -272,7 +262,7 @@ export default function StudentDashboard() {
                       <div className="flex-1">
                         <p className="font-medium">{reg.events?.title}</p>
                         <p className="text-sm text-muted-foreground">
-                          Registered on {new Date(reg.registered_at).toLocaleDateString()}
+                          Registered on {new Date(reg.registered_at || reg.createdAt || reg.created_at || 0).toLocaleDateString()}
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
@@ -286,7 +276,7 @@ export default function StudentDashboard() {
                                 variant="ghost" 
                                 size="icon" 
                                 className="h-8 w-8 text-destructive hover:bg-destructive/10"
-                                disabled={cancellingId === reg.id}
+                                disabled={cancellingId === reg.event_id}
                               >
                                 <X className="h-4 w-4" />
                               </Button>
@@ -302,7 +292,7 @@ export default function StudentDashboard() {
                                 <AlertDialogCancel>Keep Registration</AlertDialogCancel>
                                 <AlertDialogAction 
                                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                  onClick={() => handleCancelRegistration(reg.id, reg.type, reg.events?.title || "")}
+                                  onClick={() => handleCancelRegistration(reg.event_id, reg.events?.title || "")}
                                 >
                                   Cancel Registration
                                 </AlertDialogAction>

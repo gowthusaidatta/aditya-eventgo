@@ -2,11 +2,12 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/integrations/api/apiClient";
 import { Trophy, Medal, Award } from "lucide-react";
 
 interface TeamScore {
-  id: string;
+  id?: string;
+  team_id?: string;
   name: string;
   total_score: number;
   rank: number | null;
@@ -28,14 +29,10 @@ export function Leaderboard({ eventId }: LeaderboardProps) {
 
   const fetchLeaderboard = async () => {
     try {
-      const { data, error } = await supabase
-        .from("teams")
-        .select("id, name, total_score, rank, current_round, status")
-        .eq("event_id", eventId)
-        .order("total_score", { ascending: false });
-
-      if (error) throw error;
-      setTeams(data || []);
+      const data = await apiClient.getTeams(eventId);
+      const teamsData = Array.isArray(data) ? data : [];
+      teamsData.sort((a: any, b: any) => (b.total_score || 0) - (a.total_score || 0));
+      setTeams(teamsData);
     } catch (error) {
       console.error("Error fetching leaderboard:", error);
     } finally {
@@ -99,7 +96,7 @@ export function Leaderboard({ eventId }: LeaderboardProps) {
           <div className="space-y-2">
             {teams.map((team, index) => (
               <div
-                key={team.id}
+                key={team.team_id || team.id}
                 className={`flex items-center justify-between p-3 rounded-lg border ${getRankBg(index + 1)}`}
               >
                 <div className="flex items-center gap-3">

@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/integrations/api/apiClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { QrCode, CheckCircle, XCircle, Search, UserCheck } from "lucide-react";
@@ -42,15 +42,13 @@ export function QRCheckIn({ eventId }: QRCheckInProps) {
     setResult(null);
 
     try {
-      // Find registration by QR code
-      const { data: registration, error: findError } = await supabase
-        .from("event_registrations")
-        .select("id, user_id, check_in_time, qr_code")
-        .eq("event_id", eventId)
-        .eq("qr_code", qrCode.toUpperCase())
-        .single();
+      const response = await apiClient.checkInRegistration({
+        eventId,
+        qrCode: qrCode.toUpperCase(),
+      });
 
-      if (findError || !registration) {
+      const registration = response?.registration || response;
+      if (!registration) {
         setResult({
           success: false,
           message: "Registration not found. Please check the QR code.",
@@ -58,48 +56,17 @@ export function QRCheckIn({ eventId }: QRCheckInProps) {
         return;
       }
 
-      // Fetch profile separately
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("full_name, email")
-        .eq("user_id", registration.user_id)
-        .single();
-
-      const profile = profileData || { full_name: "Unknown", email: "" };
-
-      if (registration.check_in_time) {
-        setResult({
-          success: false,
-          message: `Already checked in at ${new Date(registration.check_in_time).toLocaleTimeString()}`,
-          registration: {
-            id: registration.id,
-            profile,
-            check_in_time: registration.check_in_time,
-          },
-        });
-        return;
-      }
-
-      // Update check-in
-      const checkInTime = new Date().toISOString();
-      const { error: updateError } = await supabase
-        .from("event_registrations")
-        .update({
-          check_in_time: checkInTime,
-          check_in_by: user.id,
-          registration_status: "attended",
-        })
-        .eq("id", registration.id);
-
-      if (updateError) throw updateError;
+      const profiles = await apiClient.getUsersByIds([registration.user_id]);
+      const profileMatch = Array.isArray(profiles) ? profiles[0] : null;
+      const profile = profileMatch || { full_name: "Unknown", email: "" };
 
       setResult({
         success: true,
         message: "Check-in successful!",
         registration: {
-          id: registration.id,
+          id: registration.registration_id || registration.id || registration.user_id,
           profile,
-          check_in_time: checkInTime,
+          check_in_time: registration.check_in_time,
         },
       });
 
@@ -119,10 +86,31 @@ export function QRCheckIn({ eventId }: QRCheckInProps) {
 
       setQrCode("");
     } catch (error: unknown) {
-      const err = error as { message?: string };
+      const err = error as any;
+      const status = err?.response?.status;
+      const message = err?.response?.data?.message || err?.message;
+
+      if (status === 409 && err?.response?.data?.registration) {
+        const registration = err.response.data.registration;
+        const profiles = await apiClient.getUsersByIds([registration.user_id]);
+        const profileMatch = Array.isArray(profiles) ? profiles[0] : null;
+        const profile = profileMatch || { full_name: "Unknown", email: "" };
+
+        setResult({
+          success: false,
+          message: `Already checked in at ${new Date(registration.check_in_time).toLocaleTimeString()}`,
+          registration: {
+            id: registration.registration_id || registration.id || registration.user_id,
+            profile,
+            check_in_time: registration.check_in_time,
+          },
+        });
+        return;
+      }
+
       setResult({
         success: false,
-        message: err.message || "An error occurred during check-in.",
+        message: message || "An error occurred during check-in.",
       });
     } finally {
       setLoading(false);
