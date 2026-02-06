@@ -86,20 +86,20 @@ export default function StudentDashboard() {
 
     try {
       await apiClient.cancelRegistration(eventId);
+      toast({
+        title: "Registration Cancelled",
+        description: `Your registration for "${eventTitle}" has been cancelled.`,
+      });
+      fetchRegistrations();
     } catch (error) {
       toast({
         title: "Error",
         description: "Failed to cancel registration. Please try again.",
         variant: "destructive",
       });
-    } else {
-      toast({
-        title: "Registration Cancelled",
-        description: `Your registration for "${eventTitle}" has been cancelled.`,
-      });
-      fetchRegistrations();
+    } finally {
+      setCancellingId(null);
     }
-    setCancellingId(null);
   };
 
   if (loading) {
