@@ -438,11 +438,10 @@ function EventSettings({ event, onUpdate }: { event: Event; onUpdate: () => void
   const handlePublish = async () => {
     try {
       await apiClient.updateEvent(event.id, { status: "published" });
-    } catch (error) {
-      toast({ title: "Error", description: "Failed to publish event", variant: "destructive" });
-    } else {
       toast({ title: "Published!", description: "Event is now live" });
       onUpdate();
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to publish event", variant: "destructive" });
     }
   };
 
