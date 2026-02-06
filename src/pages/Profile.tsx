@@ -73,6 +73,7 @@ export default function Profile() {
     if (!user) return;
 
     setSaving(true);
+    let didUpdate = false;
     try {
       await apiClient.updateProfile({
         full_name: data.full_name,
@@ -83,13 +84,16 @@ export default function Profile() {
         graduation_year: data.graduation_year ? parseInt(data.graduation_year) : null,
         college_id: data.college_id || null,
       });
+      didUpdate = true;
     } catch (error) {
       toast({
         title: "Error",
         description: "Failed to update profile. Please try again.",
         variant: "destructive",
       });
-    } else {
+    }
+
+    if (didUpdate) {
       toast({
         title: "Profile updated",
         description: "Your profile has been successfully updated.",
