@@ -138,6 +138,25 @@ export default function Profile() {
     }
   };
 
+  const getVerificationMessage = () => {
+    if (profile.user_type !== "college") {
+      return "Your account is pending verification";
+    }
+
+    switch (profile.college_role) {
+      case "principal":
+        return "Pending administrator verification";
+      case "dean":
+        return "Pending principal or administrator verification";
+      case "staff_coordinator":
+        return "Pending dean, principal, or administrator verification";
+      case "student_coordinator":
+        return "Pending staff coordinator, dean, principal, or administrator verification";
+      default:
+        return "Pending administrator verification";
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
@@ -447,9 +466,7 @@ export default function Profile() {
                   <div className="flex items-center gap-2 text-yellow-600">
                     <XCircle className="h-5 w-5" />
                     <span className="font-medium">
-                      {profile.user_type === "college"
-                        ? "Pending admin verification"
-                        : "Your account is pending verification"}
+                        {getVerificationMessage()}
                     </span>
                   </div>
                 )}

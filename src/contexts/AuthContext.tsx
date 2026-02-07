@@ -34,6 +34,50 @@ interface AuthContextType {
   refreshProfile: () => Promise<void>;
 }
 
+const pendingProfileKey = "pending_profile";
+
+type PendingProfile = {
+  email: string;
+  full_name?: string;
+  phone?: string | null;
+  user_type: UserType;
+  college_name?: string | null;
+  graduation_year?: number | null;
+  roll_number?: string | null;
+  branch?: string | null;
+  college_id?: string | null;
+  college_role?: CollegeRole | null;
+  is_verified?: boolean;
+};
+
+function readPendingProfile(email?: string): PendingProfile | null {
+  if (typeof localStorage === "undefined") return null;
+  const raw = localStorage.getItem(pendingProfileKey);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as PendingProfile;
+    if (email && parsed?.email && parsed.email !== email) {
+      return null;
+    }
+    return parsed;
+  } catch (error) {
+    localStorage.removeItem(pendingProfileKey);
+    return null;
+  }
+}
+
+function clearPendingProfile(email?: string) {
+  if (typeof localStorage === "undefined") return;
+  if (!email) {
+    localStorage.removeItem(pendingProfileKey);
+    return;
+  }
+  const pending = readPendingProfile(email);
+  if (pending?.email === email) {
+    localStorage.removeItem(pendingProfileKey);
+  }
+}
+
 const AuthContext = createContext<AuthContextType>({
   user: null,
   session: null,
@@ -55,14 +99,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     
     try {
       let profileData = await apiClient.getProfile();
+      const pendingProfile = readPendingProfile(user.email);
 
       if (!profileData?.user_type) {
+        const userType = pendingProfile?.user_type || "student";
         profileData = await apiClient.updateProfile({
-          user_type: "student",
-          full_name: user.name || user.email,
-          email: user.email,
-          is_verified: true,
+          user_type: userType,
+          full_name: pendingProfile?.full_name || user.name || user.email,
+          email: pendingProfile?.email || user.email,
+          phone: pendingProfile?.phone ?? null,
+          college_name: pendingProfile?.college_name ?? null,
+          graduation_year: pendingProfile?.graduation_year ?? null,
+          roll_number: pendingProfile?.roll_number ?? null,
+          branch: pendingProfile?.branch ?? null,
+          college_id: pendingProfile?.college_id ?? null,
+          college_role: pendingProfile?.college_role ?? null,
+          is_verified:
+            pendingProfile?.is_verified ?? (userType === "college" ? false : true),
         });
+        clearPendingProfile(user.email);
+      } else if (pendingProfile?.email === user.email) {
+        clearPendingProfile(user.email);
       }
 
       setProfile(profileData as Profile);

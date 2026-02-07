@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCognitoAuth } from "@/contexts/CognitoAuthContext";
 import eventgoLogo from "@/assets/eventgo-logo.png";
 
@@ -14,11 +15,20 @@ export default function Signup() {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [userType, setUserType] = useState<"student" | "college">("student");
+  const [collegeRole, setCollegeRole] = useState("");
+  const [collegeName, setCollegeName] = useState("");
+  const [collegeId, setCollegeId] = useState("");
+  const [rollNumber, setRollNumber] = useState("");
+  const [branch, setBranch] = useState("");
+  const [graduationYear, setGraduationYear] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const isCollege = userType === "college";
 
   const handleSignup = async (event: FormEvent) => {
     event.preventDefault();
@@ -26,6 +36,16 @@ export default function Signup() {
 
     if (password !== confirmPassword) {
       setError("Passwords do not match");
+      return;
+    }
+
+    if (!collegeName.trim()) {
+      setError("College name is required");
+      return;
+    }
+
+    if (isCollege && !collegeRole) {
+      setError("Select a college role");
       return;
     }
 
@@ -42,6 +62,22 @@ export default function Signup() {
       setError(result.message || "Sign up failed");
       return;
     }
+
+    const pendingProfile = {
+      email: email.trim(),
+      full_name: name.trim() || undefined,
+      phone: phone.trim() || null,
+      user_type: isCollege ? "college" : "student",
+      college_role: isCollege ? collegeRole : null,
+      college_name: collegeName.trim() || null,
+      college_id: isCollege ? collegeId.trim() || null : null,
+      roll_number: !isCollege ? rollNumber.trim() || null : null,
+      branch: !isCollege ? branch.trim() || null : null,
+      graduation_year: !isCollege && graduationYear ? Number(graduationYear) : null,
+      is_verified: isCollege ? false : true,
+    };
+
+    localStorage.setItem("pending_profile", JSON.stringify(pendingProfile));
 
     if (result.userConfirmed) {
       navigate("/login");
@@ -93,6 +129,39 @@ export default function Signup() {
           {step === "signup" ? (
             <form className="space-y-4" onSubmit={handleSignup}>
               <div className="space-y-2">
+                <Label htmlFor="signup-user-type" className="text-white/80">
+                  Account type
+                </Label>
+                <Select value={userType} onValueChange={(value) => setUserType(value as "student" | "college")}>
+                  <SelectTrigger id="signup-user-type">
+                    <SelectValue placeholder="Select account type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="student">Student</SelectItem>
+                    <SelectItem value="college">College Staff</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {isCollege && (
+                <div className="space-y-2">
+                  <Label htmlFor="signup-college-role" className="text-white/80">
+                    College role
+                  </Label>
+                  <Select value={collegeRole} onValueChange={setCollegeRole}>
+                    <SelectTrigger id="signup-college-role">
+                      <SelectValue placeholder="Select role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="principal">Principal</SelectItem>
+                      <SelectItem value="dean">Dean</SelectItem>
+                      <SelectItem value="staff_coordinator">Staff Coordinator</SelectItem>
+                      <SelectItem value="student_coordinator">Student Coordinator</SelectItem>
+                      <SelectItem value="host">Event Host</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              <div className="space-y-2">
                 <Label htmlFor="signup-name" className="text-white/80">
                   Full name
                 </Label>
@@ -133,6 +202,78 @@ export default function Signup() {
                   placeholder="+91..."
                 />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="signup-college-name" className="text-white/80">
+                  College/University name
+                </Label>
+                <Input
+                  id="signup-college-name"
+                  name="collegeName"
+                  type="text"
+                  value={collegeName}
+                  onChange={(event) => setCollegeName(event.target.value)}
+                  placeholder="Your college or university"
+                  required
+                />
+              </div>
+              {!isCollege && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-roll-number" className="text-white/80">
+                      Roll number (optional)
+                    </Label>
+                    <Input
+                      id="signup-roll-number"
+                      name="rollNumber"
+                      type="text"
+                      value={rollNumber}
+                      onChange={(event) => setRollNumber(event.target.value)}
+                      placeholder="e.g., 20CS001"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-branch" className="text-white/80">
+                      Branch (optional)
+                    </Label>
+                    <Input
+                      id="signup-branch"
+                      name="branch"
+                      type="text"
+                      value={branch}
+                      onChange={(event) => setBranch(event.target.value)}
+                      placeholder="e.g., Computer Science"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-grad-year" className="text-white/80">
+                      Graduation year (optional)
+                    </Label>
+                    <Input
+                      id="signup-grad-year"
+                      name="graduationYear"
+                      type="number"
+                      value={graduationYear}
+                      onChange={(event) => setGraduationYear(event.target.value)}
+                      placeholder="e.g., 2026"
+                    />
+                  </div>
+                </>
+              )}
+              {isCollege && (
+                <div className="space-y-2">
+                  <Label htmlFor="signup-college-id" className="text-white/80">
+                    College ID (optional)
+                  </Label>
+                  <Input
+                    id="signup-college-id"
+                    name="collegeId"
+                    type="text"
+                    value={collegeId}
+                    onChange={(event) => setCollegeId(event.target.value)}
+                    placeholder="Your staff ID"
+                  />
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="signup-password" className="text-white/80">
                   Password

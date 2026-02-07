@@ -47,6 +47,25 @@ export default function Dashboard() {
   const canManageUsers = isAdmin || isPrincipal;
   const canViewAnalytics = isAdmin;
 
+  const getVerificationMessage = () => {
+    if (!isCollege) {
+      return "Please verify your email to access all features.";
+    }
+
+    switch (collegeRole) {
+      case "principal":
+        return "Your account is awaiting verification by the administrator.";
+      case "dean":
+        return "Your account is awaiting verification by the principal or administrator.";
+      case "staff_coordinator":
+        return "Your account is awaiting verification by the dean, principal, or administrator.";
+      case "student_coordinator":
+        return "Your account is awaiting verification by the staff coordinator, dean, principal, or administrator.";
+      default:
+        return "Your account is awaiting verification by the administrator.";
+    }
+  };
+
   const dashboardCards = [];
 
   // Common cards for all users
@@ -250,9 +269,7 @@ export default function Dashboard() {
                 <div>
                   <p className="font-medium">Account Pending Verification</p>
                   <p className="text-sm text-muted-foreground">
-                    {isCollege 
-                      ? "Your account is awaiting verification by an admin or principal. Some features may be limited."
-                      : "Please verify your email to access all features."}
+                    {getVerificationMessage()}
                   </p>
                 </div>
               </div>

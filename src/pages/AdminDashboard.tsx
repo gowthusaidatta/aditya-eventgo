@@ -67,6 +67,14 @@ export default function AdminDashboard() {
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const [sharingEvent, setSharingEvent] = useState<Event | null>(null);
 
+  const roleLabel: Record<string, string> = {
+    principal: "Principal",
+    dean: "Dean",
+    staff_coordinator: "Staff Coordinator",
+    student_coordinator: "Student Coordinator",
+    host: "Event Host",
+  };
+
   // New event form state
   const [newEvent, setNewEvent] = useState({
     title: "",
@@ -467,7 +475,10 @@ export default function AdminDashboard() {
                             {user.user_type}
                           </Badge>
                           {user.user_type === "college" && getUserRole(user.user_id || user.userId || "") && (
-                            <Badge variant="outline">{getUserRole(user.user_id || user.userId || "")}</Badge>
+                            <Badge variant="outline">
+                              {roleLabel[getUserRole(user.user_id || user.userId || "") as string] ||
+                                getUserRole(user.user_id || user.userId || "")}
+                            </Badge>
                           )}
                           {user.is_verified ? (
                             <Badge className="bg-green-500">Verified</Badge>

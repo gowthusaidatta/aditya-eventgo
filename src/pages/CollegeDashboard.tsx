@@ -72,7 +72,7 @@ export default function CollegeDashboard() {
   const canEdit = collegeRole === "principal" || collegeRole === "dean";
   const canDelete = collegeRole === "principal" || collegeRole === "dean";
   const canViewReports = collegeRole === "principal" || collegeRole === "dean";
-  const canVerifyUsers = collegeRole === "principal";
+  const canVerifyUsers = collegeRole === "principal" || collegeRole === "dean" || collegeRole === "staff_coordinator";
   const isVerified = profile?.is_verified;
 
   const roleLabel: Record<string, string> = {
@@ -80,6 +80,40 @@ export default function CollegeDashboard() {
     dean: "Dean",
     staff_coordinator: "Staff Coordinator",
     student_coordinator: "Student Coordinator",
+    host: "Event Host",
+  };
+
+  const getVerificationNotice = () => {
+    switch (collegeRole) {
+      case "principal":
+        return "Your account is awaiting verification by the administrator.";
+      case "dean":
+        return "Your account is awaiting verification by the principal or administrator.";
+      case "staff_coordinator":
+        return "Your account is awaiting verification by the dean, principal, or administrator.";
+      case "student_coordinator":
+        return "Your account is awaiting verification by the staff coordinator, dean, principal, or administrator.";
+      default:
+        return "Your account is awaiting verification by the administrator.";
+    }
+  };
+
+  const canVerifyTargetRole = (targetRole: string | null | undefined) => {
+    if (!collegeRole || !targetRole) return false;
+
+    if (collegeRole === "principal") {
+      return targetRole !== "principal";
+    }
+
+    if (collegeRole === "dean") {
+      return ["staff_coordinator", "student_coordinator", "host"].includes(targetRole);
+    }
+
+    if (collegeRole === "staff_coordinator") {
+      return ["student_coordinator"].includes(targetRole);
+    }
+
+    return false;
   };
 
   useEffect(() => {
@@ -137,7 +171,15 @@ export default function CollegeDashboard() {
     return role || null;
   };
 
-  const handleVerifyUser = async (userId: string, verify: boolean) => {
+  const handleVerifyUser = async (userId: string, verify: boolean, targetRole?: string | null) => {
+    if (!canVerifyTargetRole(targetRole)) {
+      toast({
+        title: "Not allowed",
+        description: "You do not have permission to verify this role.",
+        variant: "destructive",
+      });
+      return;
+    }
     try {
       await apiClient.updateUserProfile(userId, { is_verified: verify });
     } catch (error) {
@@ -270,8 +312,7 @@ export default function CollegeDashboard() {
               </div>
               <CardTitle>Verification Pending</CardTitle>
               <CardDescription>
-                Your account is awaiting verification by the administrator.
-                You will be able to access the dashboard once your account has been verified.
+                {getVerificationNotice()} You will be able to access the dashboard once your account has been verified.
               </CardDescription>
             </CardHeader>
             <CardContent className="text-center">
@@ -579,12 +620,16 @@ export default function CollegeDashboard() {
                     </div>
                   ) : (
                     collegeUsers.map((u) => (
+                      (() => {
+                        const targetRole = getUserRole(u.user_id || u.userId) || null;
+                        const canVerifyTarget = canVerifyTargetRole(targetRole);
+                        return (
                       <div key={u.id || u.user_id || u.userId} className="flex items-center justify-between rounded-lg border p-4">
                         <div>
                           <div className="flex items-center gap-2">
                             <p className="font-medium">{u.full_name}</p>
-                            {getUserRole(u.user_id || u.userId) && (
-                              <Badge variant="outline">{roleLabel[getUserRole(u.user_id || u.userId) as string]}</Badge>
+                            {targetRole && (
+                              <Badge variant="outline">{roleLabel[targetRole as string] || targetRole}</Badge>
                             )}
                             {u.is_verified ? (
                               <Badge className="bg-green-500">Verified</Badge>
@@ -599,18 +644,29 @@ export default function CollegeDashboard() {
                         </div>
                         <div className="flex gap-2">
                           {u.is_verified ? (
-                            <Button variant="outline" size="sm" onClick={() => handleVerifyUser(u.user_id || u.userId, false)}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={!canVerifyTarget}
+                              onClick={() => handleVerifyUser(u.user_id || u.userId, false, targetRole)}
+                            >
                               <UserX className="mr-1 h-4 w-4" />
                               Revoke
                             </Button>
                           ) : (
-                            <Button size="sm" onClick={() => handleVerifyUser(u.user_id || u.userId, true)}>
+                            <Button
+                              size="sm"
+                              disabled={!canVerifyTarget}
+                              onClick={() => handleVerifyUser(u.user_id || u.userId, true, targetRole)}
+                            >
                               <UserCheck className="mr-1 h-4 w-4" />
                               Verify
                             </Button>
                           )}
                         </div>
                       </div>
+                        );
+                      })()
                     ))
                   )}
                 </CardContent>
