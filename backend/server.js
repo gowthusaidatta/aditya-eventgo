@@ -16,6 +16,15 @@ const {
 } = require("@aws-sdk/lib-dynamodb");
 const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
+const {
+  CognitoIdentityProviderClient,
+  InitiateAuthCommand,
+  SignUpCommand,
+  ConfirmSignUpCommand,
+  ResendConfirmationCodeCommand,
+  ForgotPasswordCommand,
+  ConfirmForgotPasswordCommand,
+} = require("@aws-sdk/client-cognito-identity-provider");
 const { createRemoteJWKSet, jwtVerify } = require("jose");
 
 const app = express();
@@ -43,6 +52,7 @@ const {
   COGNITO_REGION,
   COGNITO_USER_POOL_ID,
   COGNITO_CLIENT_ID,
+  COGNITO_CLIENT_SECRET,
   CORS_ORIGINS,
 } = process.env;
 
@@ -72,6 +82,9 @@ const ddb = DynamoDBDocumentClient.from(dynamoClient, {
   marshallOptions: { removeUndefinedValues: true },
 });
 const s3Client = new S3Client({ region: AWS_REGION });
+const cognitoClient = COGNITO_REGION
+  ? new CognitoIdentityProviderClient({ region: COGNITO_REGION })
+  : null;
 
 const issuer = COGNITO_REGION && COGNITO_USER_POOL_ID
   ? `https://cognito-idp.${COGNITO_REGION}.amazonaws.com/${COGNITO_USER_POOL_ID}`
@@ -113,6 +126,24 @@ async function requireAuth(req, res, next) {
   }
 }
 
+function buildSecretHash(username) {
+  if (!COGNITO_CLIENT_SECRET || !COGNITO_CLIENT_ID) {
+    return undefined;
+  }
+  return crypto
+    .createHmac("sha256", COGNITO_CLIENT_SECRET)
+    .update(`${username}${COGNITO_CLIENT_ID}`)
+    .digest("base64");
+}
+
+function ensureCognitoConfig(res) {
+  if (!cognitoClient || !COGNITO_CLIENT_ID) {
+    res.status(500).json({ message: "Cognito configuration missing" });
+    return false;
+  }
+  return true;
+}
+
 function buildUpdateExpression(item) {
   const keys = Object.keys(item);
   if (keys.length === 0) {
@@ -146,6 +177,230 @@ function generateQrCode() {
 
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
+});
+
+app.post("/auth/login", async (req, res) => {
+  if (!ensureCognitoConfig(res)) return;
+
+  const { username, password } = req.body || {};
+  if (!username || !password) {
+    res.status(400).json({ message: "Username and password are required" });
+    return;
+  }
+
+  const secretHash = buildSecretHash(username);
+
+  try {
+    const response = await cognitoClient.send(
+      new InitiateAuthCommand({
+        ClientId: COGNITO_CLIENT_ID,
+        AuthFlow: "USER_PASSWORD_AUTH",
+        AuthParameters: {
+          USERNAME: username,
+          PASSWORD: password,
+          ...(secretHash ? { SECRET_HASH: secretHash } : {}),
+        },
+      })
+    );
+
+    if (response.ChallengeName) {
+      res.status(400).json({
+        message: "Additional challenge required",
+        challengeName: response.ChallengeName,
+      });
+      return;
+    }
+
+    const result = response.AuthenticationResult || {};
+    res.json({
+      accessToken: result.AccessToken,
+      idToken: result.IdToken,
+      refreshToken: result.RefreshToken,
+      expiresIn: result.ExpiresIn,
+      tokenType: result.TokenType,
+    });
+  } catch (error) {
+    res.status(401).json({ message: "Invalid credentials" });
+  }
+});
+
+app.post("/auth/refresh", async (req, res) => {
+  if (!ensureCognitoConfig(res)) return;
+
+  const { refreshToken, username } = req.body || {};
+  if (!refreshToken) {
+    res.status(400).json({ message: "Refresh token is required" });
+    return;
+  }
+
+  if (COGNITO_CLIENT_SECRET && !username) {
+    res.status(400).json({ message: "Username is required for token refresh" });
+    return;
+  }
+
+  const secretHash = username ? buildSecretHash(username) : undefined;
+
+  try {
+    const response = await cognitoClient.send(
+      new InitiateAuthCommand({
+        ClientId: COGNITO_CLIENT_ID,
+        AuthFlow: "REFRESH_TOKEN_AUTH",
+        AuthParameters: {
+          REFRESH_TOKEN: refreshToken,
+          ...(username ? { USERNAME: username } : {}),
+          ...(secretHash ? { SECRET_HASH: secretHash } : {}),
+        },
+      })
+    );
+
+    const result = response.AuthenticationResult || {};
+    res.json({
+      accessToken: result.AccessToken,
+      idToken: result.IdToken,
+      expiresIn: result.ExpiresIn,
+      tokenType: result.TokenType,
+    });
+  } catch (error) {
+    res.status(401).json({ message: "Failed to refresh token" });
+  }
+});
+
+app.post("/auth/signup", async (req, res) => {
+  if (!ensureCognitoConfig(res)) return;
+
+  const { email, password, name, phone } = req.body || {};
+  if (!email || !password) {
+    res.status(400).json({ message: "Email and password are required" });
+    return;
+  }
+
+  const secretHash = buildSecretHash(email);
+  const attributes = [{ Name: "email", Value: email }];
+  if (name) attributes.push({ Name: "name", Value: name });
+  if (phone) attributes.push({ Name: "phone_number", Value: phone });
+
+  try {
+    const response = await cognitoClient.send(
+      new SignUpCommand({
+        ClientId: COGNITO_CLIENT_ID,
+        Username: email,
+        Password: password,
+        UserAttributes: attributes,
+        ...(secretHash ? { SecretHash: secretHash } : {}),
+      })
+    );
+
+    res.json({
+      userConfirmed: response.UserConfirmed,
+      userSub: response.UserSub,
+      codeDeliveryDetails: response.CodeDeliveryDetails,
+    });
+  } catch (error) {
+    res.status(400).json({ message: "Failed to sign up" });
+  }
+});
+
+app.post("/auth/confirm-signup", async (req, res) => {
+  if (!ensureCognitoConfig(res)) return;
+
+  const { username, code } = req.body || {};
+  if (!username || !code) {
+    res.status(400).json({ message: "Username and code are required" });
+    return;
+  }
+
+  const secretHash = buildSecretHash(username);
+
+  try {
+    await cognitoClient.send(
+      new ConfirmSignUpCommand({
+        ClientId: COGNITO_CLIENT_ID,
+        Username: username,
+        ConfirmationCode: code,
+        ...(secretHash ? { SecretHash: secretHash } : {}),
+      })
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(400).json({ message: "Failed to confirm sign up" });
+  }
+});
+
+app.post("/auth/resend-confirmation", async (req, res) => {
+  if (!ensureCognitoConfig(res)) return;
+
+  const { username } = req.body || {};
+  if (!username) {
+    res.status(400).json({ message: "Username is required" });
+    return;
+  }
+
+  const secretHash = buildSecretHash(username);
+
+  try {
+    const response = await cognitoClient.send(
+      new ResendConfirmationCodeCommand({
+        ClientId: COGNITO_CLIENT_ID,
+        Username: username,
+        ...(secretHash ? { SecretHash: secretHash } : {}),
+      })
+    );
+    res.json({ codeDeliveryDetails: response.CodeDeliveryDetails });
+  } catch (error) {
+    res.status(400).json({ message: "Failed to resend confirmation" });
+  }
+});
+
+app.post("/auth/forgot-password", async (req, res) => {
+  if (!ensureCognitoConfig(res)) return;
+
+  const { username } = req.body || {};
+  if (!username) {
+    res.status(400).json({ message: "Username is required" });
+    return;
+  }
+
+  const secretHash = buildSecretHash(username);
+
+  try {
+    const response = await cognitoClient.send(
+      new ForgotPasswordCommand({
+        ClientId: COGNITO_CLIENT_ID,
+        Username: username,
+        ...(secretHash ? { SecretHash: secretHash } : {}),
+      })
+    );
+    res.json({ codeDeliveryDetails: response.CodeDeliveryDetails });
+  } catch (error) {
+    res.status(400).json({ message: "Failed to start password reset" });
+  }
+});
+
+app.post("/auth/confirm-forgot-password", async (req, res) => {
+  if (!ensureCognitoConfig(res)) return;
+
+  const { username, code, newPassword } = req.body || {};
+  if (!username || !code || !newPassword) {
+    res.status(400).json({ message: "Username, code, and new password are required" });
+    return;
+  }
+
+  const secretHash = buildSecretHash(username);
+
+  try {
+    await cognitoClient.send(
+      new ConfirmForgotPasswordCommand({
+        ClientId: COGNITO_CLIENT_ID,
+        Username: username,
+        ConfirmationCode: code,
+        Password: newPassword,
+        ...(secretHash ? { SecretHash: secretHash } : {}),
+      })
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(400).json({ message: "Failed to reset password" });
+  }
 });
 
 app.get("/events", async (req, res) => {

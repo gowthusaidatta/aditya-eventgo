@@ -1,11 +1,35 @@
-import { Link } from "react-router-dom";
+import { FormEvent, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useCognitoAuth } from "@/contexts/CognitoAuthContext";
 import eventgoLogo from "@/assets/eventgo-logo.png";
 
 export default function Login() {
-  const { login } = useCognitoAuth();
+  const { loginWithPassword } = useCognitoAuth();
+  const navigate = useNavigate();
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    setError(null);
+    setIsSubmitting(true);
+
+    const result = await loginWithPassword({ username: username.trim(), password });
+    setIsSubmitting(false);
+
+    if (result.success) {
+      navigate("/dashboard");
+      return;
+    }
+
+    setError(result.message || "Login failed");
+  };
 
   return (
     <div className="flex min-h-screen items-center justify-center hero-section p-4">
@@ -18,14 +42,41 @@ export default function Login() {
           <CardDescription className="text-white/60">Log in to your EventGo account</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            <p className="text-sm text-white/60">
-              Continue to the secure EventGo sign-in page.
-            </p>
-            <Button type="button" className="w-full" onClick={login}>
-              Continue to Login
+          <form className="space-y-4" onSubmit={handleSubmit}>
+            <div className="space-y-2">
+              <Label htmlFor="login-username" className="text-white/80">
+                Email or phone number
+              </Label>
+              <Input
+                id="login-username"
+                name="username"
+                type="text"
+                autoComplete="username"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                placeholder="you@example.com"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="login-password" className="text-white/80">
+                Password
+              </Label>
+              <Input
+                id="login-password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+              />
+            </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+            <Button type="submit" className="w-full" disabled={isSubmitting}>
+              {isSubmitting ? "Signing in..." : "Sign in"}
             </Button>
-          </div>
+          </form>
         </CardContent>
         <CardFooter className="flex flex-col gap-4">
           <Link to="/forgot-password" className="text-sm text-primary hover:underline">

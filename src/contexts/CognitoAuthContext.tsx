@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from "react";
+import { apiClient } from "@/integrations/api/apiClient";
 
 interface CognitoUser {
   sub: string;
@@ -13,8 +14,12 @@ interface AuthContextType {
   loading: boolean;
   idToken: string | null;
   accessToken: string | null;
-  login: () => void;
-  signup: () => void;
+  loginWithPassword: (data: { username: string; password: string }) => Promise<{ success: boolean; message?: string }>;
+  signupWithPassword: (data: { email: string; password: string; name?: string; phone?: string }) => Promise<{ success: boolean; message?: string; userConfirmed?: boolean }>;
+  confirmSignup: (data: { username: string; code: string }) => Promise<{ success: boolean; message?: string }>;
+  resendConfirmation: (data: { username: string }) => Promise<{ success: boolean; message?: string }>;
+  startPasswordReset: (data: { username: string }) => Promise<{ success: boolean; message?: string }>;
+  confirmPasswordReset: (data: { username: string; code: string; newPassword: string }) => Promise<{ success: boolean; message?: string }>;
   logout: () => void;
   refreshTokens: () => Promise<void>;
 }
@@ -25,8 +30,12 @@ const CognitoAuthContext = createContext<AuthContextType>({
   loading: true,
   idToken: null,
   accessToken: null,
-  login: () => {},
-  signup: () => {},
+  loginWithPassword: async () => ({ success: false }),
+  signupWithPassword: async () => ({ success: false }),
+  confirmSignup: async () => ({ success: false }),
+  resendConfirmation: async () => ({ success: false }),
+  startPasswordReset: async () => ({ success: false }),
+  confirmPasswordReset: async () => ({ success: false }),
   logout: () => {},
   refreshTokens: async () => {},
 });
@@ -38,10 +47,6 @@ export function CognitoAuthProvider({ children }: { children: ReactNode }) {
   const [idToken, setIdToken] = useState<string | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState<string | null>(null);
-
-  const COGNITO_DOMAIN = import.meta.env.VITE_COGNITO_DOMAIN;
-  const CLIENT_ID = import.meta.env.VITE_COGNITO_CLIENT_ID;
-  const REDIRECT_URI = import.meta.env.VITE_COGNITO_REDIRECT_URI;
 
   // Initialize auth state from localStorage
   useEffect(() => {
@@ -70,6 +75,7 @@ export function CognitoAuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("cognito_access_token");
     localStorage.removeItem("cognito_refresh_token");
     localStorage.removeItem("cognito_user");
+    localStorage.removeItem("cognito_username");
     setUser(null);
     setIdToken(null);
     setAccessToken(null);
@@ -77,73 +83,102 @@ export function CognitoAuthProvider({ children }: { children: ReactNode }) {
     setIsAuthenticated(false);
   }, []);
 
-  const login = useCallback(() => {
-    const loginUrl = `${COGNITO_DOMAIN}/login?client_id=${CLIENT_ID}&response_type=code&scope=openid+email+profile&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
-    window.location.href = loginUrl;
-  }, [COGNITO_DOMAIN, CLIENT_ID, REDIRECT_URI]);
+  const persistTokens = useCallback((tokens: { idToken: string; accessToken: string; refreshToken?: string }) => {
+    localStorage.setItem("cognito_id_token", tokens.idToken);
+    localStorage.setItem("cognito_access_token", tokens.accessToken);
+    if (tokens.refreshToken) {
+      localStorage.setItem("cognito_refresh_token", tokens.refreshToken);
+    }
 
-  const signup = useCallback(() => {
-    const signupUrl = `${COGNITO_DOMAIN}/signup?client_id=${CLIENT_ID}&response_type=code&scope=openid+email+profile&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
-    window.location.href = signupUrl;
-  }, [COGNITO_DOMAIN, CLIENT_ID, REDIRECT_URI]);
+    const decoded = decodeJWT(tokens.idToken);
+    if (decoded) {
+      localStorage.setItem("cognito_user", JSON.stringify(decoded));
+      setUser(decoded);
+    }
+
+    setIdToken(tokens.idToken);
+    setAccessToken(tokens.accessToken);
+    setRefreshToken(tokens.refreshToken || null);
+    setIsAuthenticated(true);
+  }, []);
+
+  const loginWithPassword = useCallback(
+    async (data: { username: string; password: string }) => {
+      try {
+        const response = await apiClient.authLogin(data);
+        if (!response?.idToken || !response?.accessToken) {
+          return { success: false, message: "Login failed" };
+        }
+
+        localStorage.setItem("cognito_username", data.username);
+
+        persistTokens({
+          idToken: response.idToken,
+          accessToken: response.accessToken,
+          refreshToken: response.refreshToken,
+        });
+        return { success: true };
+      } catch (error) {
+        return { success: false, message: "Invalid credentials" };
+      }
+    },
+    [persistTokens]
+  );
+
+  const signupWithPassword = useCallback(
+    async (data: { email: string; password: string; name?: string; phone?: string }) => {
+      try {
+        const response = await apiClient.authSignup(data);
+        return { success: true, userConfirmed: response?.userConfirmed };
+      } catch (error) {
+        return { success: false, message: "Sign up failed" };
+      }
+    },
+    []
+  );
+
+  const confirmSignup = useCallback(async (data: { username: string; code: string }) => {
+    try {
+      await apiClient.confirmSignup(data);
+      return { success: true };
+    } catch (error) {
+      return { success: false, message: "Invalid confirmation code" };
+    }
+  }, []);
+
+  const resendConfirmation = useCallback(async (data: { username: string }) => {
+    try {
+      await apiClient.resendConfirmation(data);
+      return { success: true };
+    } catch (error) {
+      return { success: false, message: "Failed to resend code" };
+    }
+  }, []);
+
+  const startPasswordReset = useCallback(async (data: { username: string }) => {
+    try {
+      await apiClient.forgotPassword(data);
+      return { success: true };
+    } catch (error) {
+      return { success: false, message: "Failed to start reset" };
+    }
+  }, []);
+
+  const confirmPasswordReset = useCallback(
+    async (data: { username: string; code: string; newPassword: string }) => {
+      try {
+        await apiClient.confirmForgotPassword(data);
+        return { success: true };
+      } catch (error) {
+        return { success: false, message: "Failed to reset password" };
+      }
+    },
+    []
+  );
 
   const logout = useCallback(() => {
     clearAuthState();
-    const logoutUrl = `${COGNITO_DOMAIN}/logout?client_id=${CLIENT_ID}&logout_uri=${encodeURIComponent(import.meta.env.VITE_COGNITO_LOGOUT_URI)}`;
-    window.location.href = logoutUrl;
-  }, [COGNITO_DOMAIN, CLIENT_ID, clearAuthState]);
-
-  const exchangeCodeForTokens = useCallback(
-    async (code: string) => {
-      try {
-        const response = await fetch(`${COGNITO_DOMAIN}/oauth2/token`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-          },
-          body: new URLSearchParams({
-            grant_type: "authorization_code",
-            client_id: CLIENT_ID,
-            code: code,
-            redirect_uri: REDIRECT_URI,
-          }).toString(),
-        });
-
-        if (!response.ok) {
-          throw new Error("Failed to exchange code for tokens");
-        }
-
-        const data = await response.json();
-        const { id_token, access_token, refresh_token } = data;
-
-        // Store tokens
-        localStorage.setItem("cognito_id_token", id_token);
-        localStorage.setItem("cognito_access_token", access_token);
-        if (refresh_token) {
-          localStorage.setItem("cognito_refresh_token", refresh_token);
-        }
-
-        // Decode and set user from ID token
-        const decoded = decodeJWT(id_token);
-        if (decoded) {
-          localStorage.setItem("cognito_user", JSON.stringify(decoded));
-          setUser(decoded);
-        }
-
-        setIdToken(id_token);
-        setAccessToken(access_token);
-        setRefreshToken(refresh_token);
-        setIsAuthenticated(true);
-
-        return true;
-      } catch (error) {
-        console.error("Error exchanging code for tokens:", error);
-        clearAuthState();
-        return false;
-      }
-    },
-    [COGNITO_DOMAIN, CLIENT_ID, REDIRECT_URI, clearAuthState]
-  );
+  }, [clearAuthState]);
 
   const refreshTokens = useCallback(async () => {
     if (!refreshToken) {
@@ -152,42 +187,28 @@ export function CognitoAuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const response = await fetch(`${COGNITO_DOMAIN}/oauth2/token`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({
-          grant_type: "refresh_token",
-          client_id: CLIENT_ID,
-          refresh_token: refreshToken,
-        }).toString(),
+      const storedUser = localStorage.getItem("cognito_user");
+      const storedUsername = localStorage.getItem("cognito_username");
+      const username = storedUsername || (storedUser ? JSON.parse(storedUser)?.email : undefined);
+      const response = await apiClient.authRefresh({
+        refreshToken,
+        username,
       });
 
-      if (!response.ok) {
+      if (!response?.idToken || !response?.accessToken) {
         clearAuthState();
         return;
       }
 
-      const data = await response.json();
-      const { id_token, access_token } = data;
-
-      localStorage.setItem("cognito_id_token", id_token);
-      localStorage.setItem("cognito_access_token", access_token);
-
-      setIdToken(id_token);
-      setAccessToken(access_token);
-      setIsAuthenticated(true);
+      persistTokens({
+        idToken: response.idToken,
+        accessToken: response.accessToken,
+      });
     } catch (error) {
       console.error("Error refreshing tokens:", error);
       clearAuthState();
     }
-  }, [refreshToken, COGNITO_DOMAIN, CLIENT_ID, clearAuthState]);
-
-  // Store exchangeCodeForTokens for use in callback component
-  useEffect(() => {
-    (window as any).__exchangeCodeForTokens = exchangeCodeForTokens;
-  }, [exchangeCodeForTokens]);
+  }, [refreshToken, clearAuthState, persistTokens]);
 
   return (
     <CognitoAuthContext.Provider
@@ -197,8 +218,12 @@ export function CognitoAuthProvider({ children }: { children: ReactNode }) {
         loading,
         idToken,
         accessToken,
-        login,
-        signup,
+        loginWithPassword,
+        signupWithPassword,
+        confirmSignup,
+        resendConfirmation,
+        startPasswordReset,
+        confirmPasswordReset,
         logout,
         refreshTokens,
       }}

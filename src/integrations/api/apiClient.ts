@@ -5,6 +5,12 @@ class ApiClient {
 
   constructor() {
     const baseUrl = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/+$/, "");
+    const authClient = axios.create({
+      baseURL: baseUrl,
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
     this.client = axios.create({
       baseURL: baseUrl,
       headers: {
@@ -36,8 +42,12 @@ class ApiClient {
             const refreshToken = localStorage.getItem("cognito_refresh_token");
             if (refreshToken) {
               // Call refresh endpoint on your backend
-              const refreshResponse = await axios.post(`${baseUrl}/auth/refresh`, {
+              const storedUser = localStorage.getItem("cognito_user");
+              const storedUsername = localStorage.getItem("cognito_username");
+              const username = storedUsername || (storedUser ? JSON.parse(storedUser)?.email : undefined);
+              const refreshResponse = await authClient.post("/auth/refresh", {
                 refreshToken,
+                username,
               });
 
               if (refreshResponse.data.accessToken) {
@@ -66,6 +76,41 @@ class ApiClient {
         return Promise.reject(error);
       }
     );
+  }
+
+  async authLogin(data: { username: string; password: string }) {
+    const response = await this.client.post("/auth/login", data);
+    return response.data;
+  }
+
+  async authSignup(data: { email: string; password: string; name?: string; phone?: string }) {
+    const response = await this.client.post("/auth/signup", data);
+    return response.data;
+  }
+
+  async confirmSignup(data: { username: string; code: string }) {
+    const response = await this.client.post("/auth/confirm-signup", data);
+    return response.data;
+  }
+
+  async resendConfirmation(data: { username: string }) {
+    const response = await this.client.post("/auth/resend-confirmation", data);
+    return response.data;
+  }
+
+  async forgotPassword(data: { username: string }) {
+    const response = await this.client.post("/auth/forgot-password", data);
+    return response.data;
+  }
+
+  async confirmForgotPassword(data: { username: string; code: string; newPassword: string }) {
+    const response = await this.client.post("/auth/confirm-forgot-password", data);
+    return response.data;
+  }
+
+  async authRefresh(data: { refreshToken: string; username?: string }) {
+    const response = await this.client.post("/auth/refresh", data);
+    return response.data;
   }
 
   // User endpoints
