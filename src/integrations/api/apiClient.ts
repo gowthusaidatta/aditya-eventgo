@@ -4,8 +4,9 @@ class ApiClient {
   private client: AxiosInstance;
 
   constructor() {
+    const baseUrl = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/+$/, "");
     this.client = axios.create({
-      baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:5000",
+      baseURL: baseUrl,
       headers: {
         "Content-Type": "application/json",
       },
@@ -35,10 +36,9 @@ class ApiClient {
             const refreshToken = localStorage.getItem("cognito_refresh_token");
             if (refreshToken) {
               // Call refresh endpoint on your backend
-              const refreshResponse = await axios.post(
-                `${import.meta.env.VITE_API_BASE_URL}/auth/refresh`,
-                { refreshToken }
-              );
+              const refreshResponse = await axios.post(`${baseUrl}/auth/refresh`, {
+                refreshToken,
+              });
 
               if (refreshResponse.data.accessToken) {
                 localStorage.setItem(
