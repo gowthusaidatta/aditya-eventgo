@@ -42,7 +42,8 @@ services:
     networks:
       - eventgo
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      test:
+        ["CMD", "node", "-e", "require('http').get('http://localhost:5000/health', (r) => { if (r.statusCode !== 200) throw new Error(r.statusCode); }).on('error', (e) => { throw e; });"]
       interval: 30s
       timeout: 3s
       retries: 3
