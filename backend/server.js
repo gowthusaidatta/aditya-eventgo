@@ -144,6 +144,12 @@ function ensureCognitoConfig(res) {
   return true;
 }
 
+function formatCognitoError(error, fallbackMessage) {
+  const code = error?.name || "CognitoError";
+  const message = error?.message || fallbackMessage;
+  return { code, message };
+}
+
 function buildUpdateExpression(item) {
   const keys = Object.keys(item);
   if (keys.length === 0) {
@@ -220,7 +226,9 @@ app.post("/auth/login", async (req, res) => {
       tokenType: result.TokenType,
     });
   } catch (error) {
-    res.status(401).json({ message: "Invalid credentials" });
+    const details = formatCognitoError(error, "Invalid credentials");
+    console.error("Cognito login failed:", details.code, details.message);
+    res.status(401).json({ message: details.message, code: details.code });
   }
 });
 
@@ -261,7 +269,9 @@ app.post("/auth/refresh", async (req, res) => {
       tokenType: result.TokenType,
     });
   } catch (error) {
-    res.status(401).json({ message: "Failed to refresh token" });
+    const details = formatCognitoError(error, "Failed to refresh token");
+    console.error("Cognito refresh failed:", details.code, details.message);
+    res.status(401).json({ message: details.message, code: details.code });
   }
 });
 
@@ -296,7 +306,9 @@ app.post("/auth/signup", async (req, res) => {
       codeDeliveryDetails: response.CodeDeliveryDetails,
     });
   } catch (error) {
-    res.status(400).json({ message: "Failed to sign up" });
+    const details = formatCognitoError(error, "Failed to sign up");
+    console.error("Cognito sign up failed:", details.code, details.message);
+    res.status(400).json({ message: details.message, code: details.code });
   }
 });
 
@@ -322,7 +334,9 @@ app.post("/auth/confirm-signup", async (req, res) => {
     );
     res.json({ success: true });
   } catch (error) {
-    res.status(400).json({ message: "Failed to confirm sign up" });
+    const details = formatCognitoError(error, "Failed to confirm sign up");
+    console.error("Cognito confirm sign up failed:", details.code, details.message);
+    res.status(400).json({ message: details.message, code: details.code });
   }
 });
 
@@ -347,7 +361,9 @@ app.post("/auth/resend-confirmation", async (req, res) => {
     );
     res.json({ codeDeliveryDetails: response.CodeDeliveryDetails });
   } catch (error) {
-    res.status(400).json({ message: "Failed to resend confirmation" });
+    const details = formatCognitoError(error, "Failed to resend confirmation");
+    console.error("Cognito resend confirmation failed:", details.code, details.message);
+    res.status(400).json({ message: details.message, code: details.code });
   }
 });
 
@@ -372,7 +388,9 @@ app.post("/auth/forgot-password", async (req, res) => {
     );
     res.json({ codeDeliveryDetails: response.CodeDeliveryDetails });
   } catch (error) {
-    res.status(400).json({ message: "Failed to start password reset" });
+    const details = formatCognitoError(error, "Failed to start password reset");
+    console.error("Cognito forgot password failed:", details.code, details.message);
+    res.status(400).json({ message: details.message, code: details.code });
   }
 });
 
@@ -399,7 +417,9 @@ app.post("/auth/confirm-forgot-password", async (req, res) => {
     );
     res.json({ success: true });
   } catch (error) {
-    res.status(400).json({ message: "Failed to reset password" });
+    const details = formatCognitoError(error, "Failed to reset password");
+    console.error("Cognito confirm reset failed:", details.code, details.message);
+    res.status(400).json({ message: details.message, code: details.code });
   }
 });
 
