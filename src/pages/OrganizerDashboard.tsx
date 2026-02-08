@@ -288,10 +288,10 @@ function RegistrationsPanel({ eventId }: { eventId: string }) {
   const exportToCSV = () => {
     const headers = ["Name", "Email", "Roll Number", "College", "Status", "Registered At", "Checked In"];
     const rows = registrations.map(r => [
-      r.profile?.full_name || "",
-      r.profile?.email || "",
-      r.profile?.roll_number || "",
-      r.profile?.college_name || "",
+      r.profile?.full_name || r.registrant?.full_name || "",
+      r.profile?.email || r.registrant?.email || "",
+      r.profile?.roll_number || r.registrant?.roll_number || "",
+      r.profile?.college_name || r.registrant?.college_name || "",
       r.registration_status || r.status,
       new Date(r.registered_at || r.createdAt || r.created_at).toLocaleString(),
       r.check_in_time ? new Date(r.check_in_time).toLocaleString() : "No",
@@ -339,9 +339,9 @@ function RegistrationsPanel({ eventId }: { eventId: string }) {
               <tbody>
                 {registrations.map((reg) => (
                   <tr key={reg.registration_id || reg.id || `${reg.event_id}:${reg.user_id}`} className="border-b">
-                    <td className="py-2">{reg.profile?.full_name || "N/A"}</td>
-                    <td className="py-2">{reg.profile?.email || "N/A"}</td>
-                    <td className="py-2">{reg.profile?.college_name || "N/A"}</td>
+                    <td className="py-2">{reg.profile?.full_name || reg.registrant?.full_name || "N/A"}</td>
+                    <td className="py-2">{reg.profile?.email || reg.registrant?.email || "N/A"}</td>
+                    <td className="py-2">{reg.profile?.college_name || reg.registrant?.college_name || "N/A"}</td>
                     <td className="py-2">
                       <Badge variant={reg.registration_status === "attended" ? "default" : "outline"}>
                         {reg.registration_status || reg.status}

@@ -913,6 +913,38 @@ app.post("/registrations", requireAuth, async (req, res) => {
       return;
     }
 
+    let registrantProfile = null;
+    if (USERS_TABLE) {
+      const existingProfile = await ddb.send(
+        new GetCommand({
+          TableName: USERS_TABLE,
+          Key: { userId },
+        })
+      );
+
+      if (existingProfile.Item) {
+        registrantProfile = existingProfile.Item;
+      } else if (req.user?.email) {
+        const now = new Date().toISOString();
+        const minimalProfile = {
+          userId,
+          email: req.user.email,
+          full_name: req.user.name || req.user.email,
+          user_type: "student",
+          is_verified: true,
+          createdAt: now,
+          updatedAt: now,
+        };
+        await ddb.send(
+          new PutCommand({
+            TableName: USERS_TABLE,
+            Item: minimalProfile,
+          })
+        );
+        registrantProfile = minimalProfile;
+      }
+    }
+
     const item = {
       ...req.body,
       event_id: eventId,
@@ -922,6 +954,17 @@ app.post("/registrations", requireAuth, async (req, res) => {
       registered_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
       createdAt: new Date().toISOString(),
+      registrant: registrantProfile
+        ? {
+            full_name: registrantProfile.full_name || null,
+            email: registrantProfile.email || null,
+            college_name: registrantProfile.college_name || null,
+            college_id: registrantProfile.college_id || null,
+            roll_number: registrantProfile.roll_number || null,
+            branch: registrantProfile.branch || null,
+            phone: registrantProfile.phone || null,
+          }
+        : null,
     };
 
     await ddb.send(
@@ -959,7 +1002,42 @@ app.get("/registrations", requireAuth, async (req, res) => {
               },
             })
           );
-          res.json(data.Items || []);
+          const items = data.Items || [];
+          if (!USERS_TABLE || items.length === 0) {
+            res.json(items);
+            return;
+          }
+
+          const userIds = [...new Set(items.map((item) => item.user_id).filter(Boolean))];
+          const userData = userIds.length > 0
+            ? await ddb.send(
+                new BatchGetCommand({
+                  RequestItems: {
+                    [USERS_TABLE]: {
+                      Keys: userIds.map((id) => ({ userId: id })),
+                    },
+                  },
+                })
+              )
+            : null;
+          const users = userData?.Responses?.[USERS_TABLE] || [];
+          const enriched = items.map((item) => {
+            const profile = users.find((u) => u.userId === item.user_id);
+            if (!profile || item.registrant) return item;
+            return {
+              ...item,
+              registrant: {
+                full_name: profile.full_name || null,
+                email: profile.email || null,
+                college_name: profile.college_name || null,
+                college_id: profile.college_id || null,
+                roll_number: profile.roll_number || null,
+                branch: profile.branch || null,
+                phone: profile.phone || null,
+              },
+            };
+          });
+          res.json(enriched);
           return;
         } catch (error) {
           if (!isDynamoKeySchemaError(error)) {
