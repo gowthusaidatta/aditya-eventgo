@@ -5,11 +5,13 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useCognitoAuth } from "@/contexts/CognitoAuthContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { Shield } from "lucide-react";
 import eventgoLogo from "@/assets/eventgo-logo.png";
 
 export default function AdminLogin() {
   const { loginWithPassword } = useCognitoAuth();
+  const { refreshProfile } = useAuth();
   const navigate = useNavigate();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -25,6 +27,7 @@ export default function AdminLogin() {
     setIsSubmitting(false);
 
     if (result.success) {
+      await refreshProfile();
       navigate("/admin-dashboard");
       return;
     }
