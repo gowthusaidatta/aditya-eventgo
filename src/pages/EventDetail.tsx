@@ -118,12 +118,20 @@ export default function EventDetail() {
       setOrganizerName(eventData?.organizer?.name || null);
       setSchedule(eventData?.schedule || []);
 
-      const countData = await apiClient.getRegistrationCount(eventId);
-      setRegistrationCount(countData?.count || 0);
+      try {
+        const countData = await apiClient.getRegistrationCount(eventId);
+        setRegistrationCount(countData?.count || 0);
+      } catch (countError) {
+        console.error("Error fetching registration count:", countError);
+      }
 
       if (user) {
-        const regData = await apiClient.getRegistrations(eventId);
-        setIsRegistered(Array.isArray(regData) && regData.length > 0);
+        try {
+          const regData = await apiClient.getRegistrations(eventId);
+          setIsRegistered(Array.isArray(regData) && regData.length > 0);
+        } catch (regError) {
+          console.error("Error fetching registrations:", regError);
+        }
       }
     } catch (error) {
       console.error("Error fetching event:", error);
@@ -141,12 +149,20 @@ export default function EventDetail() {
           setOrganizerName(null);
           setSchedule([]);
 
-          const countData = await apiClient.getRegistrationCount(eventId);
-          setRegistrationCount(countData?.count || 0);
+          try {
+            const countData = await apiClient.getRegistrationCount(eventId);
+            setRegistrationCount(countData?.count || 0);
+          } catch (countError) {
+            console.error("Error fetching registration count:", countError);
+          }
 
           if (user) {
-            const regData = await apiClient.getRegistrations(eventId);
-            setIsRegistered(Array.isArray(regData) && regData.length > 0);
+            try {
+              const regData = await apiClient.getRegistrations(eventId);
+              setIsRegistered(Array.isArray(regData) && regData.length > 0);
+            } catch (regError) {
+              console.error("Error fetching registrations:", regError);
+            }
           }
           setLoading(false);
           return;
