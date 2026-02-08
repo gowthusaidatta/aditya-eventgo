@@ -1046,17 +1046,31 @@ app.get("/registrations", requireAuth, async (req, res) => {
           }));
           const enriched = items.map((item) => {
             const profile = users.find((u) => u.userId === item.user_id);
-            if (!profile || item.registrant) return item;
+            if (item.registrant) return item;
+            if (profile) {
+              return {
+                ...item,
+                registrant: {
+                  full_name: profile.full_name || null,
+                  email: profile.email || null,
+                  college_name: profile.college_name || null,
+                  college_id: profile.college_id || null,
+                  roll_number: profile.roll_number || null,
+                  branch: profile.branch || null,
+                  phone: profile.phone || null,
+                },
+              };
+            }
             return {
               ...item,
               registrant: {
-                full_name: profile.full_name || null,
-                email: profile.email || null,
-                college_name: profile.college_name || null,
-                college_id: profile.college_id || null,
-                roll_number: profile.roll_number || null,
-                branch: profile.branch || null,
-                phone: profile.phone || null,
+                full_name: item.full_name || null,
+                email: item.email || null,
+                college_name: item.college_name || null,
+                college_id: item.college_id || null,
+                roll_number: item.roll_number || null,
+                branch: item.branch || null,
+                phone: item.phone || null,
               },
             };
           });
