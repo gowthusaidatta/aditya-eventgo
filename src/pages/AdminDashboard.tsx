@@ -56,6 +56,16 @@ export default function AdminDashboard() {
   const { user, profile, loading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  const superAdminEmails = (import.meta.env.VITE_SUPER_ADMIN_EMAILS || "Datta@gmail.com")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+
+  const isSuperAdminUser = (candidate: User) => {
+    if (!candidate?.email) return false;
+    return superAdminEmails.includes(candidate.email.toLowerCase());
+  };
   
   const [users, setUsers] = useState<User[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
@@ -582,7 +592,13 @@ export default function AdminDashboard() {
                             </DialogFooter>
                           </DialogContent>
                         </Dialog>
-                        <Button variant="destructive" size="sm" onClick={() => handleDeleteUser(user.user_id || user.userId || "")}>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          disabled={isSuperAdminUser(user)}
+                          title={isSuperAdminUser(user) ? "Super admin accounts cannot be deleted" : undefined}
+                          onClick={() => handleDeleteUser(user.user_id || user.userId || "")}
+                        >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>

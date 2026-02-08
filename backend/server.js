@@ -54,6 +54,7 @@ const {
   COGNITO_CLIENT_ID,
   COGNITO_CLIENT_SECRET,
   CORS_ORIGINS,
+  SUPER_ADMIN_EMAILS,
 } = process.env;
 
 const allowedOrigins = (CORS_ORIGINS || "")
@@ -90,6 +91,16 @@ const issuer = COGNITO_REGION && COGNITO_USER_POOL_ID
   ? `https://cognito-idp.${COGNITO_REGION}.amazonaws.com/${COGNITO_USER_POOL_ID}`
   : null;
 const jwks = issuer ? createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`)) : null;
+
+const superAdminEmails = (SUPER_ADMIN_EMAILS || "Datta@gmail.com")
+  .split(",")
+  .map((value) => value.trim().toLowerCase())
+  .filter(Boolean);
+
+function isSuperAdminEmail(email) {
+  if (!email) return false;
+  return superAdminEmails.includes(email.toLowerCase());
+}
 
 async function verifyToken(token) {
   if (!jwks || !issuer || !COGNITO_CLIENT_ID) {
@@ -190,6 +201,16 @@ function generateInviteCode() {
 
 function generateQrCode() {
   return `REG-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
+}
+
+function isDynamoKeySchemaError(error) {
+  const message = error?.message || "";
+  return (
+    error?.name === "ValidationException" &&
+    (message.includes("provided key element") ||
+      message.includes("Query condition missed key schema element") ||
+      message.includes("The provided key element does not match the schema"))
+  );
 }
 
 app.get("/health", (req, res) => {
@@ -691,7 +712,37 @@ app.get("/users/me", requireAuth, async (req, res) => {
         Key: { userId },
       })
     );
-    res.json(data.Item || { userId });
+    const existing = data.Item || {};
+    const now = new Date().toISOString();
+    const isSuperAdmin = isSuperAdminEmail(req.user.email);
+
+    if (isSuperAdmin) {
+      const updateFields = {
+        user_type: "admin",
+        is_verified: true,
+        email: existing.email || req.user.email,
+        full_name: existing.full_name || req.user.name || req.user.email,
+        updatedAt: now,
+        createdAt: existing.createdAt || now,
+      };
+
+      const update = buildUpdateExpression(updateFields);
+      const updated = update
+        ? await ddb.send(
+            new UpdateCommand({
+              TableName: USERS_TABLE,
+              Key: { userId },
+              ...update,
+              ReturnValues: "ALL_NEW",
+            })
+          )
+        : { Attributes: { ...existing, ...updateFields } };
+
+      res.json(updated.Attributes || { userId, ...updateFields });
+      return;
+    }
+
+    res.json(Object.keys(existing).length ? existing : { userId });
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch user profile" });
   }
@@ -782,6 +833,18 @@ app.put("/users/:userId", requireAuth, async (req, res) => {
 
 app.delete("/users/:userId", requireAuth, async (req, res) => {
   try {
+    const target = await ddb.send(
+      new GetCommand({
+        TableName: USERS_TABLE,
+        Key: { userId: req.params.userId },
+      })
+    );
+
+    if (isSuperAdminEmail(target.Item?.email)) {
+      res.status(403).json({ message: "Super admin accounts cannot be deleted" });
+      return;
+    }
+
     await ddb.send(
       new DeleteCommand({
         TableName: USERS_TABLE,
@@ -798,12 +861,20 @@ app.put("/users/me", requireAuth, async (req, res) => {
   try {
     const userId = req.user.sub;
     const now = new Date().toISOString();
+    const isSuperAdmin = isSuperAdminEmail(req.user.email);
     const item = {
       ...req.body,
       userId,
       updatedAt: now,
       createdAt: req.body.createdAt || now,
     };
+
+    if (isSuperAdmin) {
+      item.user_type = "admin";
+      item.is_verified = true;
+      item.email = req.user.email;
+      item.full_name = item.full_name || req.user.name || req.user.email;
+    }
 
     await ddb.send(
       new PutCommand({
@@ -864,34 +935,113 @@ app.get("/registrations", requireAuth, async (req, res) => {
 
     if (eventId) {
       if (all === "true") {
+        try {
+          const data = await ddb.send(
+            new QueryCommand({
+              TableName: REGISTRATIONS_TABLE,
+              KeyConditionExpression: "event_id = :event_id",
+              ExpressionAttributeValues: {
+                ":event_id": eventId,
+              },
+            })
+          );
+          res.json(data.Items || []);
+          return;
+        } catch (error) {
+          if (!isDynamoKeySchemaError(error)) {
+            console.error("Registrations query by event_id failed:", error?.name, error?.message);
+            res.status(500).json({ message: "Failed to fetch registrations" });
+            return;
+          }
+        }
+
+        const scanData = await ddb.send(
+          new ScanCommand({
+            TableName: REGISTRATIONS_TABLE,
+            FilterExpression: "event_id = :event_id",
+            ExpressionAttributeValues: { ":event_id": eventId },
+          })
+        );
+        res.json(scanData.Items || []);
+        return;
+      }
+
+      try {
         const data = await ddb.send(
           new QueryCommand({
             TableName: REGISTRATIONS_TABLE,
-            KeyConditionExpression: "event_id = :event_id",
+            KeyConditionExpression: "event_id = :event_id AND user_id = :user_id",
             ExpressionAttributeValues: {
               ":event_id": eventId,
+              ":user_id": userId,
             },
           })
         );
         res.json(data.Items || []);
         return;
+      } catch (error) {
+        if (!isDynamoKeySchemaError(error)) {
+          console.error("Registrations query by event_id/user_id failed:", error?.name, error?.message);
+          res.status(500).json({ message: "Failed to fetch registrations" });
+          return;
+        }
       }
 
-      const data = await ddb.send(
-        new QueryCommand({
+      try {
+        const data = await ddb.send(
+          new QueryCommand({
+            TableName: REGISTRATIONS_TABLE,
+            KeyConditionExpression: "user_id = :user_id",
+            FilterExpression: "event_id = :event_id",
+            ExpressionAttributeValues: {
+              ":event_id": eventId,
+              ":user_id": userId,
+            },
+          })
+        );
+        res.json(data.Items || []);
+        return;
+      } catch (error) {
+        if (!isDynamoKeySchemaError(error)) {
+          console.error("Registrations query by user_id failed:", error?.name, error?.message);
+          res.status(500).json({ message: "Failed to fetch registrations" });
+          return;
+        }
+      }
+
+      const scanData = await ddb.send(
+        new ScanCommand({
           TableName: REGISTRATIONS_TABLE,
-          KeyConditionExpression: "event_id = :event_id AND user_id = :user_id",
+          FilterExpression: "event_id = :event_id AND user_id = :user_id",
           ExpressionAttributeValues: {
             ":event_id": eventId,
             ":user_id": userId,
           },
         })
       );
-      res.json(data.Items || []);
+      res.json(scanData.Items || []);
       return;
     }
 
-    const data = await ddb.send(
+    try {
+      const data = await ddb.send(
+        new QueryCommand({
+          TableName: REGISTRATIONS_TABLE,
+          KeyConditionExpression: "user_id = :user_id",
+          ExpressionAttributeValues: { ":user_id": userId },
+        })
+      );
+      res.json(data.Items || []);
+      return;
+    } catch (error) {
+      if (!isDynamoKeySchemaError(error)) {
+        console.error("Registrations query by user_id failed:", error?.name, error?.message);
+        res.status(500).json({ message: "Failed to fetch registrations" });
+        return;
+      }
+    }
+
+    const scanData = await ddb.send(
       new ScanCommand({
         TableName: REGISTRATIONS_TABLE,
         FilterExpression: "user_id = :user_id",
@@ -899,8 +1049,9 @@ app.get("/registrations", requireAuth, async (req, res) => {
       })
     );
 
-    res.json(data.Items || []);
+    res.json(scanData.Items || []);
   } catch (error) {
+    console.error("Registrations handler failed:", error?.name, error?.message);
     res.status(500).json({ message: "Failed to fetch registrations" });
   }
 });

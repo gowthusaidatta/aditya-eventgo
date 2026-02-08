@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,11 +16,34 @@ interface EventMediaUploadProps {
 export function EventMediaUpload({ imageUrl, videoUrl, onImageChange, onVideoChange }: EventMediaUploadProps) {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadingVideo, setUploadingVideo] = useState(false);
+  const [localImagePreview, setLocalImagePreview] = useState<string | null>(null);
+  const [localVideoPreview, setLocalVideoPreview] = useState<string | null>(null);
   const { toast } = useToast();
+
+  useEffect(() => {
+    return () => {
+      if (localImagePreview) {
+        URL.revokeObjectURL(localImagePreview);
+      }
+    };
+  }, [localImagePreview]);
+
+  useEffect(() => {
+    return () => {
+      if (localVideoPreview) {
+        URL.revokeObjectURL(localVideoPreview);
+      }
+    };
+  }, [localVideoPreview]);
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (localImagePreview) {
+      URL.revokeObjectURL(localImagePreview);
+    }
+    setLocalImagePreview(URL.createObjectURL(file));
 
     // Validate file type
     if (!file.type.startsWith("image/")) {
@@ -65,6 +88,10 @@ export function EventMediaUpload({ imageUrl, videoUrl, onImageChange, onVideoCha
       });
     } catch (error: any) {
       console.error("Upload error:", error);
+      if (localImagePreview) {
+        URL.revokeObjectURL(localImagePreview);
+      }
+      setLocalImagePreview(null);
       toast({
         title: "Upload failed",
         description: error.message || "Failed to upload image",
@@ -78,6 +105,11 @@ export function EventMediaUpload({ imageUrl, videoUrl, onImageChange, onVideoCha
   const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (localVideoPreview) {
+      URL.revokeObjectURL(localVideoPreview);
+    }
+    setLocalVideoPreview(URL.createObjectURL(file));
 
     // Validate file type
     if (!file.type.startsWith("video/")) {
@@ -122,6 +154,10 @@ export function EventMediaUpload({ imageUrl, videoUrl, onImageChange, onVideoCha
       });
     } catch (error: any) {
       console.error("Upload error:", error);
+      if (localVideoPreview) {
+        URL.revokeObjectURL(localVideoPreview);
+      }
+      setLocalVideoPreview(null);
       toast({
         title: "Upload failed",
         description: error.message || "Failed to upload video",
@@ -133,12 +169,23 @@ export function EventMediaUpload({ imageUrl, videoUrl, onImageChange, onVideoCha
   };
 
   const removeImage = () => {
+    if (localImagePreview) {
+      URL.revokeObjectURL(localImagePreview);
+    }
+    setLocalImagePreview(null);
     onImageChange(null);
   };
 
   const removeVideo = () => {
+    if (localVideoPreview) {
+      URL.revokeObjectURL(localVideoPreview);
+    }
+    setLocalVideoPreview(null);
     onVideoChange(null);
   };
+
+  const resolvedImageUrl = localImagePreview || imageUrl;
+  const resolvedVideoUrl = localVideoPreview || videoUrl;
 
   return (
     <div className="space-y-4">
@@ -148,10 +195,10 @@ export function EventMediaUpload({ imageUrl, videoUrl, onImageChange, onVideoCha
           <Image className="h-4 w-4" />
           Event Image
         </Label>
-        {imageUrl ? (
+        {resolvedImageUrl ? (
           <div className="relative">
             <img
-              src={imageUrl}
+              src={resolvedImageUrl}
               alt="Event preview"
               className="h-32 w-full rounded-lg object-cover"
             />
@@ -189,10 +236,10 @@ export function EventMediaUpload({ imageUrl, videoUrl, onImageChange, onVideoCha
           <Video className="h-4 w-4" />
           Event Video (optional)
         </Label>
-        {videoUrl ? (
+        {resolvedVideoUrl ? (
           <div className="relative">
             <video
-              src={videoUrl}
+              src={resolvedVideoUrl}
               className="h-32 w-full rounded-lg object-cover"
               controls
             />
