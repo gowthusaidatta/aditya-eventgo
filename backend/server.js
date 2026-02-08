@@ -718,6 +718,7 @@ app.delete("/opportunities/:oppId", requireAuth, async (req, res) => {
 
 app.get("/users/me", requireAuth, async (req, res) => {
   try {
+    res.set("Cache-Control", "no-store");
     const userId = req.user.sub;
     const data = await ddb.send(
       new GetCommand({
@@ -812,8 +813,27 @@ app.get("/users", requireAuth, async (req, res) => {
         },
       })
     );
+    let items = data.Responses?.[USERS_TABLE] || [];
+    if (items.length === 0 && ids.length > 0) {
+      const filters = [];
+      const values = {};
+      ids.forEach((id, index) => {
+        const token = `:id${index}`;
+        filters.push(`userId = ${token} OR user_id = ${token}`);
+        values[token] = id;
+      });
 
-    res.json(data.Responses?.[USERS_TABLE] || []);
+      const scanData = await ddb.send(
+        new ScanCommand({
+          TableName: USERS_TABLE,
+          FilterExpression: filters.join(" OR "),
+          ExpressionAttributeValues: values,
+        })
+      );
+      items = scanData.Items || [];
+    }
+
+    res.json(items);
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch users" });
   }
@@ -1020,7 +1040,10 @@ app.get("/registrations", requireAuth, async (req, res) => {
                 })
               )
             : null;
-          const users = userData?.Responses?.[USERS_TABLE] || [];
+          const users = (userData?.Responses?.[USERS_TABLE] || []).map((item) => ({
+            ...item,
+            userId: item.userId || item.user_id,
+          }));
           const enriched = items.map((item) => {
             const profile = users.find((u) => u.userId === item.user_id);
             if (!profile || item.registrant) return item;
