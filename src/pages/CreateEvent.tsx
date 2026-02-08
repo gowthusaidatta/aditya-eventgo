@@ -68,6 +68,15 @@ export default function CreateEvent() {
   const [teamSizeMax, setTeamSizeMax] = useState("5");
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [tagsInput, setTagsInput] = useState("");
+  const [skillsInput, setSkillsInput] = useState("");
+  const [festivalCampaign, setFestivalCampaign] = useState("");
+  const [websiteUrl, setWebsiteUrl] = useState("");
+  const [theme, setTheme] = useState("");
+  const [participationType, setParticipationType] = useState<"individual" | "team">("individual");
+  const [whoCanRegister, setWhoCanRegister] = useState("Everyone can apply");
+  const [collegeOrganization, setCollegeOrganization] = useState("Everyone can apply");
+  const [genderCriteria, setGenderCriteria] = useState("Everyone can apply");
 
   // Schedule
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
@@ -151,9 +160,51 @@ export default function CreateEvent() {
       return;
     }
 
+    if (mode !== "online" && !location.trim()) {
+      toast({ title: "Error", description: "Location is required for offline or hybrid events", variant: "destructive" });
+      return;
+    }
+
+    if (mode !== "offline" && !onlineLink.trim()) {
+      toast({ title: "Error", description: "Online link is required for online or hybrid events", variant: "destructive" });
+      return;
+    }
+
+    if (registrationDeadline && new Date(registrationDeadline) > new Date(startDate)) {
+      toast({ title: "Error", description: "Registration deadline must be before the start date", variant: "destructive" });
+      return;
+    }
+
+    if (websiteUrl.trim() && !/^https?:\/\//i.test(websiteUrl.trim())) {
+      toast({ title: "Error", description: "Website URL must start with http:// or https://", variant: "destructive" });
+      return;
+    }
+
+    const minTeamSize = parseInt(teamSizeMin, 10);
+    const maxTeamSize = parseInt(teamSizeMax, 10);
+    if ((participationType === "team" || isHackathon) && (
+      Number.isNaN(minTeamSize) ||
+      Number.isNaN(maxTeamSize) ||
+      minTeamSize < 1 ||
+      maxTeamSize < minTeamSize
+    )) {
+      toast({ title: "Error", description: "Please enter a valid team size range", variant: "destructive" });
+      return;
+    }
+
     setLoading(true);
 
     try {
+      const cleanTags = tagsInput
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter((tag) => tag.length > 0);
+      const cleanSkills = skillsInput
+        .split(",")
+        .map((skill) => skill.trim())
+        .filter((skill) => skill.length > 0);
+      const useTeamSizes = participationType === "team" || isHackathon;
+
       const event = await apiClient.createEvent({
         title,
         description,
@@ -168,10 +219,22 @@ export default function CreateEvent() {
         registration_deadline: registrationDeadline ? new Date(registrationDeadline).toISOString() : null,
         max_participants: maxParticipants ? parseInt(maxParticipants) : null,
         registration_fee: parseFloat(registrationFee) || 0,
-        team_size_min: isHackathon ? parseInt(teamSizeMin) : 1,
-        team_size_max: isHackathon ? parseInt(teamSizeMax) : 1,
+        team_size_min: useTeamSizes ? parseInt(teamSizeMin) : 1,
+        team_size_max: useTeamSizes ? parseInt(teamSizeMax) : 1,
         image_url: imageUrl,
         video_url: videoUrl,
+        tags: cleanTags,
+        venue_details: {
+          festival_campaign: festivalCampaign.trim() || null,
+          website: websiteUrl.trim() || null,
+          theme: theme.trim() || null,
+          skills: cleanSkills,
+          registration_criteria: {
+            who_can_register: whoCanRegister.trim() || "Everyone can apply",
+            college_organization: collegeOrganization.trim() || "Everyone can apply",
+            gender: genderCriteria.trim() || "Everyone can apply",
+          },
+        },
         prizes: prizes.filter(p => p.position && p.amount).map(({ id, ...p }) => p),
         sponsors: sponsors.filter(s => s.name).map(({ id, ...s }) => s),
         status,
@@ -317,9 +380,78 @@ export default function CreateEvent() {
                   <Switch
                     id="hackathon"
                     checked={isHackathon}
-                    onCheckedChange={setIsHackathon}
+                    onCheckedChange={(checked) => {
+                      setIsHackathon(checked);
+                      if (checked) {
+                        setParticipationType("team");
+                      }
+                    }}
                   />
                   <Label htmlFor="hackathon">This is a hackathon (enables team features)</Label>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Tags</Label>
+                    <Input
+                      value={tagsInput}
+                      onChange={(e) => setTagsInput(e.target.value)}
+                      placeholder="e.g., AI, Web, Design"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Skills or Tags to Learn</Label>
+                    <Input
+                      value={skillsInput}
+                      onChange={(e) => setSkillsInput(e.target.value)}
+                      placeholder="e.g., React, Python, UI/UX"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Festival/Campaign</Label>
+                    <Input
+                      value={festivalCampaign}
+                      onChange={(e) => setFestivalCampaign(e.target.value)}
+                      placeholder="Festival or campaign name"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Website URL</Label>
+                    <Input
+                      value={websiteUrl}
+                      onChange={(e) => setWebsiteUrl(e.target.value)}
+                      placeholder="https://..."
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Theme</Label>
+                    <Input
+                      value={theme}
+                      onChange={(e) => setTheme(e.target.value)}
+                      placeholder="e.g., Sustainability"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Participation Type</Label>
+                    <Select
+                      value={participationType}
+                      onValueChange={(value) => setParticipationType(value as "individual" | "team")}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="individual">Individual</SelectItem>
+                        <SelectItem value="team">Team</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-3">
@@ -413,7 +545,7 @@ export default function CreateEvent() {
                   </div>
                 </div>
 
-                {isHackathon && (
+                {(participationType === "team" || isHackathon) && (
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">
                       <Label htmlFor="minTeam">Min Team Size</Label>
@@ -438,6 +570,38 @@ export default function CreateEvent() {
                     </div>
                   </div>
                 )}
+
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-base">Registration Criteria</Label>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div className="space-y-2">
+                      <Label>Who can register?</Label>
+                      <Input
+                        value={whoCanRegister}
+                        onChange={(e) => setWhoCanRegister(e.target.value)}
+                        placeholder="Everyone can apply"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>College/Organization</Label>
+                      <Input
+                        value={collegeOrganization}
+                        onChange={(e) => setCollegeOrganization(e.target.value)}
+                        placeholder="Everyone can apply"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Gender</Label>
+                      <Input
+                        value={genderCriteria}
+                        onChange={(e) => setGenderCriteria(e.target.value)}
+                        placeholder="Everyone can apply"
+                      />
+                    </div>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

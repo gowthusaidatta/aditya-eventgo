@@ -5,7 +5,8 @@
   "license": "MIT",
   "type": "commonjs",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test"
   },
   "dependencies": {
     "@aws-sdk/client-cognito-identity-provider": "^3.983.0",

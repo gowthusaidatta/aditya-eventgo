@@ -219,9 +219,26 @@ export default function EventDetail() {
     null;
   const companyWebsite =
     (typeof venueDetails.website === "string" && venueDetails.website) || event.online_link || null;
+  const themeText =
+    (typeof venueDetails.theme === "string" && venueDetails.theme) || "Not provided";
+  const registrationCriteria =
+    (venueDetails.registration_criteria as Record<string, unknown> | undefined) || {};
+  const whoCanRegisterText =
+    (typeof registrationCriteria.who_can_register === "string" && registrationCriteria.who_can_register) ||
+    "Everyone can apply";
+  const collegeOrganizationText =
+    (typeof registrationCriteria.college_organization === "string" && registrationCriteria.college_organization) ||
+    "Everyone can apply";
+  const genderCriteriaText =
+    (typeof registrationCriteria.gender === "string" && registrationCriteria.gender) ||
+    "Everyone can apply";
   const participationType = event.team_size_max && event.team_size_max > 1 ? "Team" : "Individual";
-  const skillsText = event.tags && event.tags.length > 0 ? event.tags.join(", ") : "Not provided";
-  const themeText = event.tags && event.tags.length > 0 ? event.tags.join(", ") : "Not provided";
+  const tagsText = event.tags && event.tags.length > 0 ? event.tags.join(", ") : "Not provided";
+  const skillsText = Array.isArray(venueDetails.skills)
+    ? (venueDetails.skills as string[]).filter(Boolean).join(", ") || "Not provided"
+    : typeof venueDetails.skills === "string"
+      ? venueDetails.skills
+      : "Not provided";
   const registrationDeadlineText = event.registration_deadline
     ? format(new Date(event.registration_deadline), "EEEE, MMMM d, yyyy")
     : "Not provided";
@@ -359,7 +376,7 @@ export default function EventDetail() {
                 </div>
                 <div className="space-y-1">
                   <p className="text-sm font-medium">Tags</p>
-                  <p className="text-sm">{skillsText}</p>
+                  <p className="text-sm">{tagsText}</p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-sm font-medium">Festival/Campaign</p>
@@ -443,15 +460,15 @@ export default function EventDetail() {
               <CardContent className="space-y-3">
                 <div>
                   <p className="text-sm font-medium">Who can register?</p>
-                  <p className="text-sm text-muted-foreground">Everyone can apply</p>
+                  <p className="text-sm text-muted-foreground">{whoCanRegisterText}</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium">College/Organization</p>
-                  <p className="text-sm text-muted-foreground">Default: Everyone can apply</p>
+                  <p className="text-sm text-muted-foreground">{collegeOrganizationText}</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium">Gender</p>
-                  <p className="text-sm text-muted-foreground">Default: Everyone can apply</p>
+                  <p className="text-sm text-muted-foreground">{genderCriteriaText}</p>
                 </div>
               </CardContent>
             </Card>

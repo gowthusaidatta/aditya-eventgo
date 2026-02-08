@@ -31,7 +31,32 @@ interface Event {
   video_url: string | null;
   is_featured: boolean | null;
   created_by: string | null;
+  mode?: string | null;
+  online_link?: string | null;
+  registration_deadline?: string | null;
+  is_hackathon?: boolean | null;
+  team_size_min?: number | null;
+  team_size_max?: number | null;
+  tags?: string[];
+  venue_details?: Record<string, unknown> | null;
 }
+
+type EditableEvent = Event & {
+  tags_input?: string;
+  skills_input?: string;
+  festival_campaign?: string;
+  website_url?: string;
+  theme?: string;
+  participation_type?: "individual" | "team";
+  team_size_min_input?: string;
+  team_size_max_input?: string;
+  who_can_register?: string;
+  college_organization?: string;
+  gender_criteria?: string;
+  mode?: string;
+  online_link?: string;
+  registration_deadline?: string;
+};
 
 interface CollegeUser {
   id?: string;
@@ -54,8 +79,9 @@ export default function CollegeDashboard() {
   const [collegeUsers, setCollegeUsers] = useState<CollegeUser[]>([]);
   const [registrationCounts, setRegistrationCounts] = useState<Record<string, number>>({});
   const [isAddEventOpen, setIsAddEventOpen] = useState(false);
-  const [editingEvent, setEditingEvent] = useState<Event | null>(null);
+  const [editingEvent, setEditingEvent] = useState<EditableEvent | null>(null);
   const [sharingEvent, setSharingEvent] = useState<Event | null>(null);
+  const [editFormError, setEditFormError] = useState<string | null>(null);
 
   // New event form
   const [newEvent, setNewEvent] = useState({
@@ -69,6 +95,20 @@ export default function CollegeDashboard() {
     image_url: null as string | null,
     video_url: null as string | null,
     is_featured: false,
+    mode: "offline",
+    online_link: "",
+    registration_deadline: "",
+    tags_input: "",
+    skills_input: "",
+    festival_campaign: "",
+    website_url: "",
+    theme: "",
+    participation_type: "individual" as "individual" | "team",
+    team_size_min_input: "1",
+    team_size_max_input: "1",
+    who_can_register: "Everyone can apply",
+    college_organization: "Everyone can apply",
+    gender_criteria: "Everyone can apply",
   });
 
   const canCreate = collegeRole === "principal" || collegeRole === "dean" || collegeRole === "staff_coordinator";
@@ -84,6 +124,42 @@ export default function CollegeDashboard() {
     staff_coordinator: "Staff Coordinator",
     student_coordinator: "Student Coordinator",
     host: "Event Host",
+  };
+
+  const normalizeEditableEvent = (event: Event): EditableEvent => {
+    const venueDetails = (event.venue_details || {}) as Record<string, unknown>;
+    const registrationCriteria =
+      (venueDetails.registration_criteria as Record<string, unknown> | undefined) || {};
+    const tagsInput = Array.isArray(event.tags) ? event.tags.join(", ") : "";
+    const skillsInput = Array.isArray(venueDetails.skills)
+      ? (venueDetails.skills as string[]).filter(Boolean).join(", ")
+      : typeof venueDetails.skills === "string"
+        ? venueDetails.skills
+        : "";
+    return {
+      ...event,
+      tags_input: tagsInput,
+      skills_input: skillsInput,
+      festival_campaign:
+        (typeof venueDetails.festival_campaign === "string" && venueDetails.festival_campaign) || "",
+      website_url: (typeof venueDetails.website === "string" && venueDetails.website) || "",
+      theme: (typeof venueDetails.theme === "string" && venueDetails.theme) || "",
+      participation_type: event.team_size_max && event.team_size_max > 1 ? "team" : "individual",
+      team_size_min_input: String(event.team_size_min ?? 1),
+      team_size_max_input: String(event.team_size_max ?? event.team_size_min ?? 1),
+      who_can_register:
+        (typeof registrationCriteria.who_can_register === "string" && registrationCriteria.who_can_register) ||
+        "Everyone can apply",
+      college_organization:
+        (typeof registrationCriteria.college_organization === "string" && registrationCriteria.college_organization) ||
+        "Everyone can apply",
+      gender_criteria:
+        (typeof registrationCriteria.gender === "string" && registrationCriteria.gender) ||
+        "Everyone can apply",
+      mode: event.mode || "offline",
+      online_link: event.online_link || "",
+      registration_deadline: event.registration_deadline || "",
+    };
   };
 
   const getVerificationNotice = () => {
@@ -202,6 +278,70 @@ export default function CollegeDashboard() {
   };
 
   const handleAddEvent = async () => {
+    const eventMode = newEvent.mode || "offline";
+    if (eventMode !== "online" && !newEvent.location.trim()) {
+      toast({
+        title: "Error",
+        description: "Location is required for offline or hybrid events",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (eventMode !== "offline" && !newEvent.online_link.trim()) {
+      toast({
+        title: "Error",
+        description: "Online link is required for online or hybrid events",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (newEvent.registration_deadline && new Date(newEvent.registration_deadline) > new Date(newEvent.start_date)) {
+      toast({
+        title: "Error",
+        description: "Registration deadline must be before the start date",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (newEvent.website_url.trim() && !/^https?:\/\//i.test(newEvent.website_url.trim())) {
+      toast({
+        title: "Error",
+        description: "Website URL must start with http:// or https://",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const cleanTags = newEvent.tags_input
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length > 0);
+    const cleanSkills = newEvent.skills_input
+      .split(",")
+      .map((skill) => skill.trim())
+      .filter((skill) => skill.length > 0);
+    const participationType =
+      newEvent.participation_type || (newEvent.event_type === "hackathon" ? "team" : "individual");
+    const useTeamSizes = participationType === "team" || newEvent.event_type === "hackathon";
+    const minTeamSize = parseInt(newEvent.team_size_min_input, 10);
+    const maxTeamSize = parseInt(newEvent.team_size_max_input, 10);
+    if (useTeamSizes && (
+      Number.isNaN(minTeamSize) ||
+      Number.isNaN(maxTeamSize) ||
+      minTeamSize < 1 ||
+      maxTeamSize < minTeamSize
+    )) {
+      toast({
+        title: "Error",
+        description: "Please enter a valid team size range",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       await apiClient.createEvent({
         title: newEvent.title,
@@ -211,9 +351,29 @@ export default function CollegeDashboard() {
         start_date: newEvent.start_date,
         end_date: newEvent.end_date || null,
         location: newEvent.location,
+        mode: eventMode,
+        online_link: eventMode !== "offline" ? newEvent.online_link.trim() : null,
+        registration_deadline: newEvent.registration_deadline
+          ? new Date(newEvent.registration_deadline).toISOString()
+          : null,
+        is_hackathon: newEvent.event_type === "hackathon",
+        team_size_min: useTeamSizes ? minTeamSize : 1,
+        team_size_max: useTeamSizes ? maxTeamSize : 1,
         image_url: newEvent.image_url,
         video_url: newEvent.video_url,
         is_featured: newEvent.is_featured,
+        tags: cleanTags,
+        venue_details: {
+          festival_campaign: newEvent.festival_campaign.trim() || null,
+          website: newEvent.website_url.trim() || null,
+          theme: newEvent.theme.trim() || null,
+          skills: cleanSkills,
+          registration_criteria: {
+            who_can_register: newEvent.who_can_register.trim() || "Everyone can apply",
+            college_organization: newEvent.college_organization.trim() || "Everyone can apply",
+            gender: newEvent.gender_criteria.trim() || "Everyone can apply",
+          },
+        },
         created_by: user?.id,
       });
     } catch (error) {
@@ -241,12 +401,96 @@ export default function CollegeDashboard() {
       image_url: null,
       video_url: null,
       is_featured: false,
+      mode: "offline",
+      online_link: "",
+      registration_deadline: "",
+      tags_input: "",
+      skills_input: "",
+      festival_campaign: "",
+      website_url: "",
+      theme: "",
+      participation_type: "individual",
+      team_size_min_input: "1",
+      team_size_max_input: "1",
+      who_can_register: "Everyone can apply",
+      college_organization: "Everyone can apply",
+      gender_criteria: "Everyone can apply",
     });
     fetchEvents();
   };
 
   const handleUpdateEvent = async () => {
     if (!editingEvent) return;
+    setEditFormError(null);
+
+    const eventMode = editingEvent.mode || "offline";
+    if (eventMode !== "online" && !editingEvent.location?.trim()) {
+      setEditFormError("Location is required for offline or hybrid events.");
+      toast({
+        title: "Error",
+        description: "Location is required for offline or hybrid events",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (eventMode !== "offline" && !editingEvent.online_link?.trim()) {
+      setEditFormError("Online link is required for online or hybrid events.");
+      toast({
+        title: "Error",
+        description: "Online link is required for online or hybrid events",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (editingEvent.registration_deadline && new Date(editingEvent.registration_deadline) > new Date(editingEvent.start_date)) {
+      setEditFormError("Registration deadline must be before the start date.");
+      toast({
+        title: "Error",
+        description: "Registration deadline must be before the start date",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (editingEvent.website_url?.trim() && !/^https?:\/\//i.test(editingEvent.website_url.trim())) {
+      setEditFormError("Website URL must start with http:// or https://.");
+      toast({
+        title: "Error",
+        description: "Website URL must start with http:// or https://",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const cleanTags = (editingEvent.tags_input || "")
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length > 0);
+    const cleanSkills = (editingEvent.skills_input || "")
+      .split(",")
+      .map((skill) => skill.trim())
+      .filter((skill) => skill.length > 0);
+    const participationType =
+      editingEvent.participation_type || (editingEvent.event_type === "hackathon" ? "team" : "individual");
+    const useTeamSizes = participationType === "team" || editingEvent.event_type === "hackathon";
+    const minTeamSize = parseInt(editingEvent.team_size_min_input || "1", 10);
+    const maxTeamSize = parseInt(editingEvent.team_size_max_input || "1", 10);
+    if (useTeamSizes && (
+      Number.isNaN(minTeamSize) ||
+      Number.isNaN(maxTeamSize) ||
+      minTeamSize < 1 ||
+      maxTeamSize < minTeamSize
+    )) {
+      setEditFormError("Please enter a valid team size range.");
+      toast({
+        title: "Error",
+        description: "Please enter a valid team size range",
+        variant: "destructive",
+      });
+      return;
+    }
 
     try {
       await apiClient.updateEvent(editingEvent.id, {
@@ -257,9 +501,29 @@ export default function CollegeDashboard() {
         start_date: editingEvent.start_date,
         end_date: editingEvent.end_date,
         location: editingEvent.location,
+        mode: eventMode,
+        online_link: eventMode !== "offline" ? editingEvent.online_link?.trim() : null,
+        registration_deadline: editingEvent.registration_deadline
+          ? new Date(editingEvent.registration_deadline).toISOString()
+          : null,
+        is_hackathon: editingEvent.event_type === "hackathon",
+        team_size_min: useTeamSizes ? minTeamSize : 1,
+        team_size_max: useTeamSizes ? maxTeamSize : 1,
         image_url: editingEvent.image_url,
         video_url: editingEvent.video_url,
         is_featured: editingEvent.is_featured,
+        tags: cleanTags,
+        venue_details: {
+          festival_campaign: editingEvent.festival_campaign?.trim() || null,
+          website: editingEvent.website_url?.trim() || null,
+          theme: editingEvent.theme?.trim() || null,
+          skills: cleanSkills,
+          registration_criteria: {
+            who_can_register: editingEvent.who_can_register?.trim() || "Everyone can apply",
+            college_organization: editingEvent.college_organization?.trim() || "Everyone can apply",
+            gender: editingEvent.gender_criteria?.trim() || "Everyone can apply",
+          },
+        },
       });
     } catch (error) {
       toast({
@@ -274,6 +538,7 @@ export default function CollegeDashboard() {
       title: "Event Updated",
       description: "Event has been updated successfully.",
     });
+    setEditFormError(null);
     setEditingEvent(null);
     fetchEvents();
   };
@@ -388,7 +653,16 @@ export default function CollegeDashboard() {
                   </div>
                   <div className="grid gap-2">
                     <Label>Event Type</Label>
-                    <Select value={newEvent.event_type} onValueChange={(val) => setNewEvent({ ...newEvent, event_type: val })}>
+                    <Select
+                      value={newEvent.event_type}
+                      onValueChange={(val) =>
+                        setNewEvent({
+                          ...newEvent,
+                          event_type: val,
+                          participation_type: val === "hackathon" ? "team" : newEvent.participation_type,
+                        })
+                      }
+                    >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -423,6 +697,141 @@ export default function CollegeDashboard() {
                       value={newEvent.location}
                       onChange={(e) => setNewEvent({ ...newEvent, location: e.target.value })}
                       placeholder="Event location"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Event Mode</Label>
+                    <Select
+                      value={newEvent.mode}
+                      onValueChange={(val) => setNewEvent({ ...newEvent, mode: val })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="offline">Offline</SelectItem>
+                        <SelectItem value="online">Online</SelectItem>
+                        <SelectItem value="hybrid">Hybrid</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {newEvent.mode !== "offline" && (
+                    <div className="grid gap-2">
+                      <Label>Online Link</Label>
+                      <Input
+                        value={newEvent.online_link}
+                        onChange={(e) => setNewEvent({ ...newEvent, online_link: e.target.value })}
+                        placeholder="https://..."
+                      />
+                    </div>
+                  )}
+                  <div className="grid gap-2">
+                    <Label>Registration Deadline</Label>
+                    <Input
+                      type="datetime-local"
+                      value={newEvent.registration_deadline}
+                      onChange={(e) => setNewEvent({ ...newEvent, registration_deadline: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Tags</Label>
+                    <Input
+                      value={newEvent.tags_input}
+                      onChange={(e) => setNewEvent({ ...newEvent, tags_input: e.target.value })}
+                      placeholder="e.g., AI, Web, Design"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Skills or Tags to Learn</Label>
+                    <Input
+                      value={newEvent.skills_input}
+                      onChange={(e) => setNewEvent({ ...newEvent, skills_input: e.target.value })}
+                      placeholder="e.g., React, Python, UI/UX"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Festival/Campaign</Label>
+                    <Input
+                      value={newEvent.festival_campaign}
+                      onChange={(e) => setNewEvent({ ...newEvent, festival_campaign: e.target.value })}
+                      placeholder="Festival or campaign name"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Website URL</Label>
+                    <Input
+                      value={newEvent.website_url}
+                      onChange={(e) => setNewEvent({ ...newEvent, website_url: e.target.value })}
+                      placeholder="https://..."
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Theme</Label>
+                    <Input
+                      value={newEvent.theme}
+                      onChange={(e) => setNewEvent({ ...newEvent, theme: e.target.value })}
+                      placeholder="e.g., Sustainability"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Participation Type</Label>
+                    <Select
+                      value={newEvent.participation_type}
+                      onValueChange={(val) => setNewEvent({ ...newEvent, participation_type: val as "individual" | "team" })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="individual">Individual</SelectItem>
+                        <SelectItem value="team">Team</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {(newEvent.participation_type === "team" || newEvent.event_type === "hackathon") && (
+                    <>
+                      <div className="grid gap-2">
+                        <Label>Min Team Size</Label>
+                        <Input
+                          type="number"
+                          min="1"
+                          value={newEvent.team_size_min_input}
+                          onChange={(e) => setNewEvent({ ...newEvent, team_size_min_input: e.target.value })}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Max Team Size</Label>
+                        <Input
+                          type="number"
+                          min="1"
+                          value={newEvent.team_size_max_input}
+                          onChange={(e) => setNewEvent({ ...newEvent, team_size_max_input: e.target.value })}
+                        />
+                      </div>
+                    </>
+                  )}
+                  <div className="grid gap-2">
+                    <Label>Who can register?</Label>
+                    <Input
+                      value={newEvent.who_can_register}
+                      onChange={(e) => setNewEvent({ ...newEvent, who_can_register: e.target.value })}
+                      placeholder="Everyone can apply"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>College/Organization</Label>
+                    <Input
+                      value={newEvent.college_organization}
+                      onChange={(e) => setNewEvent({ ...newEvent, college_organization: e.target.value })}
+                      placeholder="Everyone can apply"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Gender</Label>
+                    <Input
+                      value={newEvent.gender_criteria}
+                      onChange={(e) => setNewEvent({ ...newEvent, gender_criteria: e.target.value })}
+                      placeholder="Everyone can apply"
                     />
                   </div>
                   <EventMediaUpload
@@ -538,61 +947,110 @@ export default function CollegeDashboard() {
                     No events yet. Create your first event!
                   </div>
                 ) : (
-                  events.map((event) => (
+                  events.map((event) => {
+                    const venueDetails = (event.venue_details || {}) as Record<string, unknown>;
+                    const themeText =
+                      typeof venueDetails.theme === "string" && venueDetails.theme
+                        ? venueDetails.theme
+                        : null;
+                    const tagsText = Array.isArray(event.tags) && event.tags.length > 0
+                      ? event.tags.join(", ")
+                      : null;
+                    const participationText = event.team_size_max && event.team_size_max > 1 ? "Team" : "Individual";
+                    const modeText = event.mode || "Not provided";
+
+                    return (
                       <div key={event.id} className="flex items-center justify-between rounded-lg border p-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium">{event.title}</p>
-                          <Badge>{event.event_type}</Badge>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium">{event.title}</p>
+                            <Badge>{event.event_type}</Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            {new Date(event.start_date).toLocaleDateString()} • {registrationCounts[event.id] || 0} registrations
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                            <span>Mode: {modeText}</span>
+                            <span>Participation: {participationText}</span>
+                            <span>Theme: {themeText || "Not provided"}</span>
+                            <span>Tags: {tagsText || "Not provided"}</span>
+                          </div>
                         </div>
-                        <p className="text-sm text-muted-foreground">
-                          {new Date(event.start_date).toLocaleDateString()} • {registrationCounts[event.id] || 0} registrations
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={new Date(event.start_date) > new Date() ? "default" : "secondary"}>
-                          {new Date(event.start_date) > new Date() ? "Upcoming" : "Completed"}
-                        </Badge>
-                        <Button variant="ghost" size="icon" onClick={() => setSharingEvent(event)}>
-                          <Share2 className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon">
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                        {canEdit && (
-                          <Dialog>
-                            <DialogTrigger asChild>
-                              <Button variant="ghost" size="icon" onClick={() => setEditingEvent(event)}>
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent className="max-h-[90vh] overflow-y-auto">
-                              <DialogHeader>
-                                <DialogTitle>Edit Event</DialogTitle>
-                              </DialogHeader>
-                              {editingEvent && (
-                                <div className="grid gap-4 py-4">
+                        <div className="flex items-center gap-2">
+                          <Badge variant={new Date(event.start_date) > new Date() ? "default" : "secondary"}>
+                            {new Date(event.start_date) > new Date() ? "Upcoming" : "Completed"}
+                          </Badge>
+                          <Button variant="ghost" size="icon" onClick={() => setSharingEvent(event)}>
+                            <Share2 className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon">
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          {canEdit && (
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => {
+                                    setEditFormError(null);
+                                    setEditingEvent(normalizeEditableEvent(event));
+                                  }}
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent className="max-h-[90vh] overflow-y-auto">
+                                <DialogHeader>
+                                  <DialogTitle>Edit Event</DialogTitle>
+                                </DialogHeader>
+                                {editingEvent && (
+                                  <div className="grid gap-4 py-4">
+                                    <div className="grid gap-2">
+                                      <Label>Title</Label>
+                                      <Input
+                                        value={editingEvent.title}
+                                        onChange={(e) => setEditingEvent({ ...editingEvent, title: e.target.value })}
+                                      />
+                                    </div>
+                                    <div className="grid gap-2">
+                                      <Label>Description</Label>
+                                      <Input
+                                        value={editingEvent.description || ""}
+                                        onChange={(e) => setEditingEvent({ ...editingEvent, description: e.target.value })}
+                                      />
+                                    </div>
+                                    <div className="grid gap-2">
+                                      <Label>Full Description</Label>
+                                      <Textarea
+                                        value={editingEvent.full_description || ""}
+                                        onChange={(e) => setEditingEvent({ ...editingEvent, full_description: e.target.value })}
+                                        rows={4}
+                                      />
+                                    </div>
                                   <div className="grid gap-2">
-                                    <Label>Title</Label>
-                                    <Input
-                                      value={editingEvent.title}
-                                      onChange={(e) => setEditingEvent({ ...editingEvent, title: e.target.value })}
-                                    />
-                                  </div>
-                                  <div className="grid gap-2">
-                                    <Label>Description</Label>
-                                    <Input
-                                      value={editingEvent.description || ""}
-                                      onChange={(e) => setEditingEvent({ ...editingEvent, description: e.target.value })}
-                                    />
-                                  </div>
-                                  <div className="grid gap-2">
-                                    <Label>Full Description</Label>
-                                    <Textarea
-                                      value={editingEvent.full_description || ""}
-                                      onChange={(e) => setEditingEvent({ ...editingEvent, full_description: e.target.value })}
-                                      rows={4}
-                                    />
+                                    <Label>Event Type</Label>
+                                    <Select
+                                      value={editingEvent.event_type}
+                                      onValueChange={(val) =>
+                                        setEditingEvent({
+                                          ...editingEvent,
+                                          event_type: val,
+                                          participation_type: val === "hackathon" ? "team" : editingEvent.participation_type,
+                                        })
+                                      }
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="workshop">Workshop</SelectItem>
+                                        <SelectItem value="seminar">Seminar</SelectItem>
+                                        <SelectItem value="hackathon">Hackathon</SelectItem>
+                                        <SelectItem value="fest">Fest</SelectItem>
+                                        <SelectItem value="competition">Competition</SelectItem>
+                                      </SelectContent>
+                                    </Select>
                                   </div>
                                   <div className="grid gap-2">
                                     <Label>Location</Label>
@@ -601,28 +1059,162 @@ export default function CollegeDashboard() {
                                       onChange={(e) => setEditingEvent({ ...editingEvent, location: e.target.value })}
                                     />
                                   </div>
+                                  <div className="grid gap-2">
+                                    <Label>Event Mode</Label>
+                                    <Select
+                                      value={editingEvent.mode || "offline"}
+                                      onValueChange={(val) => setEditingEvent({ ...editingEvent, mode: val })}
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="offline">Offline</SelectItem>
+                                        <SelectItem value="online">Online</SelectItem>
+                                        <SelectItem value="hybrid">Hybrid</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  {(editingEvent.mode || "offline") !== "offline" && (
+                                    <div className="grid gap-2">
+                                      <Label>Online Link</Label>
+                                      <Input
+                                        value={editingEvent.online_link || ""}
+                                        onChange={(e) => setEditingEvent({ ...editingEvent, online_link: e.target.value })}
+                                      />
+                                    </div>
+                                  )}
+                                  <div className="grid gap-2">
+                                    <Label>Registration Deadline</Label>
+                                    <Input
+                                      type="datetime-local"
+                                      value={editingEvent.registration_deadline || ""}
+                                      onChange={(e) => setEditingEvent({ ...editingEvent, registration_deadline: e.target.value })}
+                                    />
+                                  </div>
+                                  <div className="grid gap-2">
+                                    <Label>Tags</Label>
+                                    <Input
+                                      value={editingEvent.tags_input || ""}
+                                      onChange={(e) => setEditingEvent({ ...editingEvent, tags_input: e.target.value })}
+                                      placeholder="e.g., AI, Web, Design"
+                                    />
+                                  </div>
+                                  <div className="grid gap-2">
+                                    <Label>Skills or Tags to Learn</Label>
+                                    <Input
+                                      value={editingEvent.skills_input || ""}
+                                      onChange={(e) => setEditingEvent({ ...editingEvent, skills_input: e.target.value })}
+                                      placeholder="e.g., React, Python, UI/UX"
+                                    />
+                                  </div>
+                                  <div className="grid gap-2">
+                                    <Label>Festival/Campaign</Label>
+                                    <Input
+                                      value={editingEvent.festival_campaign || ""}
+                                      onChange={(e) => setEditingEvent({ ...editingEvent, festival_campaign: e.target.value })}
+                                    />
+                                  </div>
+                                  <div className="grid gap-2">
+                                    <Label>Website URL</Label>
+                                    <Input
+                                      value={editingEvent.website_url || ""}
+                                      onChange={(e) => setEditingEvent({ ...editingEvent, website_url: e.target.value })}
+                                    />
+                                  </div>
+                                  <div className="grid gap-2">
+                                    <Label>Theme</Label>
+                                    <Input
+                                      value={editingEvent.theme || ""}
+                                      onChange={(e) => setEditingEvent({ ...editingEvent, theme: e.target.value })}
+                                    />
+                                  </div>
+                                  <div className="grid gap-2">
+                                    <Label>Participation Type</Label>
+                                    <Select
+                                      value={editingEvent.participation_type || "individual"}
+                                      onValueChange={(val) =>
+                                        setEditingEvent({ ...editingEvent, participation_type: val as "individual" | "team" })
+                                      }
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="individual">Individual</SelectItem>
+                                        <SelectItem value="team">Team</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  {((editingEvent.participation_type || "individual") === "team" || editingEvent.event_type === "hackathon") && (
+                                    <>
+                                      <div className="grid gap-2">
+                                        <Label>Min Team Size</Label>
+                                        <Input
+                                          type="number"
+                                          min="1"
+                                          value={editingEvent.team_size_min_input || "1"}
+                                          onChange={(e) => setEditingEvent({ ...editingEvent, team_size_min_input: e.target.value })}
+                                        />
+                                      </div>
+                                      <div className="grid gap-2">
+                                        <Label>Max Team Size</Label>
+                                        <Input
+                                          type="number"
+                                          min="1"
+                                          value={editingEvent.team_size_max_input || "1"}
+                                          onChange={(e) => setEditingEvent({ ...editingEvent, team_size_max_input: e.target.value })}
+                                        />
+                                      </div>
+                                    </>
+                                  )}
+                                  <div className="grid gap-2">
+                                    <Label>Who can register?</Label>
+                                    <Input
+                                      value={editingEvent.who_can_register || ""}
+                                      onChange={(e) => setEditingEvent({ ...editingEvent, who_can_register: e.target.value })}
+                                    />
+                                  </div>
+                                  <div className="grid gap-2">
+                                    <Label>College/Organization</Label>
+                                    <Input
+                                      value={editingEvent.college_organization || ""}
+                                      onChange={(e) => setEditingEvent({ ...editingEvent, college_organization: e.target.value })}
+                                    />
+                                  </div>
+                                  <div className="grid gap-2">
+                                    <Label>Gender</Label>
+                                    <Input
+                                      value={editingEvent.gender_criteria || ""}
+                                      onChange={(e) => setEditingEvent({ ...editingEvent, gender_criteria: e.target.value })}
+                                    />
+                                  </div>
                                   <EventMediaUpload
                                     imageUrl={editingEvent.image_url}
                                     videoUrl={editingEvent.video_url}
                                     onImageChange={(url) => setEditingEvent({ ...editingEvent, image_url: url })}
                                     onVideoChange={(url) => setEditingEvent({ ...editingEvent, video_url: url })}
                                   />
+                                  {editFormError && (
+                                    <p className="text-sm text-destructive">{editFormError}</p>
+                                  )}
                                 </div>
                               )}
                               <DialogFooter>
                                 <Button onClick={handleUpdateEvent}>Save Changes</Button>
                               </DialogFooter>
                             </DialogContent>
-                          </Dialog>
-                        )}
-                        {canDelete && (
-                          <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDeleteEvent(event.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        )}
+                            </Dialog>
+                          )}
+                          {canDelete && (
+                            <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDeleteEvent(event.id)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </CardContent>
             </Card>

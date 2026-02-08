@@ -26,6 +26,7 @@ const {
   ConfirmForgotPasswordCommand,
 } = require("@aws-sdk/client-cognito-identity-provider");
 const { createRemoteJWKSet, jwtVerify } = require("jose");
+const { validateEventPayload } = require("./validation");
 
 const app = express();
 
@@ -548,6 +549,12 @@ app.get("/events/:eventId", async (req, res) => {
 
 app.post("/events", requireAuth, async (req, res) => {
   try {
+    const errors = validateEventPayload(req.body || {});
+    if (errors.length > 0) {
+      res.status(400).json({ message: "Validation failed", errors });
+      return;
+    }
+
     const eventId = req.body.eventId || `evt_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
@@ -573,6 +580,12 @@ app.post("/events", requireAuth, async (req, res) => {
 
 app.put("/events/:eventId", requireAuth, async (req, res) => {
   try {
+    const errors = validateEventPayload(req.body || {});
+    if (errors.length > 0) {
+      res.status(400).json({ message: "Validation failed", errors });
+      return;
+    }
+
     const updateFields = { ...req.body, updatedAt: new Date().toISOString() };
     const update = buildUpdateExpression(updateFields);
     if (!update) {
