@@ -31,7 +31,7 @@ interface AuthContextType {
   profile: Profile | null;
   collegeRole: CollegeRole | null;
   loading: boolean;
-  refreshProfile: () => Promise<void>;
+  refreshProfile: (activeUser?: AuthUser | null) => Promise<void>;
 }
 
 const pendingProfileKey = "pending_profile";
@@ -94,19 +94,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [collegeRole, setCollegeRole] = useState<CollegeRole | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const refreshProfile = async () => {
-    if (!user) return;
+  const refreshProfile = async (activeUser?: AuthUser | null) => {
+    const resolvedUser = activeUser ?? user;
+    if (!resolvedUser) return;
     
     try {
       let profileData = await apiClient.getProfile();
-      const pendingProfile = readPendingProfile(user.email);
+      const pendingProfile = readPendingProfile(resolvedUser.email);
 
       if (!profileData?.user_type) {
         const userType = pendingProfile?.user_type || "student";
         profileData = await apiClient.updateProfile({
           user_type: userType,
-          full_name: pendingProfile?.full_name || user.name || user.email,
-          email: pendingProfile?.email || user.email,
+          full_name: pendingProfile?.full_name || resolvedUser.name || resolvedUser.email,
+          email: pendingProfile?.email || resolvedUser.email,
           phone: pendingProfile?.phone ?? null,
           college_name: pendingProfile?.college_name ?? null,
           graduation_year: pendingProfile?.graduation_year ?? null,
@@ -117,9 +118,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           is_verified:
             pendingProfile?.is_verified ?? (userType === "college" ? false : true),
         });
-        clearPendingProfile(user.email);
-      } else if (pendingProfile?.email === user.email) {
-        clearPendingProfile(user.email);
+        clearPendingProfile(resolvedUser.email);
+      } else if (pendingProfile?.email === resolvedUser.email) {
+        clearPendingProfile(resolvedUser.email);
       }
 
       setProfile(profileData as Profile);
@@ -138,12 +139,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (cognitoLoading) return;
 
     if (isAuthenticated && cognitoUser) {
-      setUser({
+      const nextUser = {
         id: cognitoUser.sub,
         email: cognitoUser.email,
         name: cognitoUser.name,
-      });
-      refreshProfile().finally(() => setLoading(false));
+      };
+      setUser(nextUser);
+      refreshProfile(nextUser).finally(() => setLoading(false));
     } else {
       setUser(null);
       setProfile(null);
