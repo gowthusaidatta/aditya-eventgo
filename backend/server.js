@@ -98,8 +98,19 @@ async function verifyToken(token) {
 
   const { payload } = await jwtVerify(token, jwks, {
     issuer,
-    audience: COGNITO_CLIENT_ID,
   });
+
+  if (payload.token_use === "access") {
+    if (payload.client_id !== COGNITO_CLIENT_ID) {
+      throw new Error("Invalid access token client");
+    }
+  } else if (payload.token_use === "id") {
+    if (payload.aud !== COGNITO_CLIENT_ID) {
+      throw new Error("Invalid ID token audience");
+    }
+  } else {
+    throw new Error("Invalid token use");
+  }
 
   return payload;
 }
