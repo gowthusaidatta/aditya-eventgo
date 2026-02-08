@@ -763,6 +763,7 @@ app.get("/users/me", requireAuth, async (req, res) => {
 
 app.get("/users", requireAuth, async (req, res) => {
   try {
+    res.set("Cache-Control", "no-store");
     const userType = req.query.userType ? req.query.userType.toString() : null;
     const verified = req.query.verified ? req.query.verified.toString() : null;
     const ids = (req.query.ids || "")
