@@ -399,7 +399,11 @@ class ApiClient {
   async getUsersByIds(userIds: string[]) {
     try {
       const response = await this.client.get("/users", {
-        params: { ids: userIds.join(",") },
+        params: { ids: userIds.join(","), t: Date.now() },
+        headers: {
+          "Cache-Control": "no-store",
+          Pragma: "no-cache",
+        },
       });
       const items = Array.isArray(response.data) ? response.data : [];
       return items.map((item) => ({
