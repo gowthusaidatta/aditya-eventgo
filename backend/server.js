@@ -196,6 +196,32 @@ function buildUpdateExpression(item) {
   };
 }
 
+async function updateUserWithFallbackKey({ userId, update }) {
+  try {
+    return await ddb.send(
+      new UpdateCommand({
+        TableName: USERS_TABLE,
+        Key: { userId },
+        ...update,
+        ReturnValues: "ALL_NEW",
+      })
+    );
+  } catch (error) {
+    if (!isDynamoKeySchemaError(error)) {
+      throw error;
+    }
+  }
+
+  return await ddb.send(
+    new UpdateCommand({
+      TableName: USERS_TABLE,
+      Key: { user_id: userId },
+      ...update,
+      ReturnValues: "ALL_NEW",
+    })
+  );
+}
+
 function generateInviteCode() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
@@ -850,14 +876,10 @@ app.put("/users/:userId", requireAuth, async (req, res) => {
       return;
     }
 
-    const data = await ddb.send(
-      new UpdateCommand({
-        TableName: USERS_TABLE,
-        Key: { userId: req.params.userId },
-        ...update,
-        ReturnValues: "ALL_NEW",
-      })
-    );
+    const data = await updateUserWithFallbackKey({
+      userId: req.params.userId,
+      update,
+    });
 
     res.json(data.Attributes || {});
   } catch (error) {
@@ -896,28 +918,34 @@ app.put("/users/me", requireAuth, async (req, res) => {
     const userId = req.user.sub;
     const now = new Date().toISOString();
     const isSuperAdmin = isSuperAdminEmail(req.user.email);
-    const item = {
-      ...req.body,
-      userId,
+    const updatePayload = { ...req.body };
+    delete updatePayload.userId;
+    delete updatePayload.user_id;
+
+    const updateFields = {
+      ...updatePayload,
       updatedAt: now,
-      createdAt: req.body.createdAt || now,
     };
 
     if (isSuperAdmin) {
-      item.user_type = "admin";
-      item.is_verified = true;
-      item.email = req.user.email;
-      item.full_name = item.full_name || req.user.name || req.user.email;
+      updateFields.user_type = "admin";
+      updateFields.is_verified = true;
+      updateFields.email = req.user.email;
+      updateFields.full_name = updateFields.full_name || req.user.name || req.user.email;
     }
 
-    await ddb.send(
-      new PutCommand({
-        TableName: USERS_TABLE,
-        Item: item,
-      })
-    );
+    const update = buildUpdateExpression(updateFields);
+    if (!update) {
+      res.status(400).json({ message: "No fields to update" });
+      return;
+    }
 
-    res.json(item);
+    update.UpdateExpression = `${update.UpdateExpression}, #createdAt = if_not_exists(#createdAt, :createdAt)`;
+    update.ExpressionAttributeNames["#createdAt"] = "createdAt";
+    update.ExpressionAttributeValues[":createdAt"] = req.body?.createdAt || now;
+
+    const data = await updateUserWithFallbackKey({ userId, update });
+    res.json(data.Attributes || {});
   } catch (error) {
     res.status(500).json({ message: "Failed to update user profile" });
   }
