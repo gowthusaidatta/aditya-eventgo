@@ -240,8 +240,20 @@ export default function EventDetail() {
       ? venueDetails.skills
       : "Not provided";
   const registrationDeadlineText = event.registration_deadline
-    ? format(new Date(event.registration_deadline), "EEEE, MMMM d, yyyy")
+    ? (() => {
+        const deadlineDate = new Date(event.registration_deadline);
+        return Number.isNaN(deadlineDate.getTime())
+          ? "Not provided"
+          : format(deadlineDate, "EEEE, MMMM d, yyyy");
+      })()
     : "Not provided";
+
+  const formatDateTimeSafe = (value: string | undefined | null, pattern: string, fallback: string) => {
+    if (!value) return fallback;
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return fallback;
+    return format(parsed, pattern);
+  };
 
   const getYouTubeEmbedUrl = (url: string) => {
     const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/))([\w-]{11})/);
@@ -293,11 +305,15 @@ export default function EventDetail() {
                     <Calendar className="h-5 w-5 text-primary" />
                     <div>
                       <p className="font-medium">
-                        {format(new Date(event.startDate || event.start_date || ""), "EEEE, MMMM d, yyyy")}
+                            {formatDateTimeSafe(
+                              event.startDate || event.start_date,
+                              "EEEE, MMMM d, yyyy",
+                              "Not provided"
+                            )}
                       </p>
                       {event.end_date && (
                         <p className="text-sm text-muted-foreground">
-                          to {format(new Date(event.end_date), "MMMM d, yyyy")}
+                              to {formatDateTimeSafe(event.end_date, "MMMM d, yyyy", "Not provided")}
                         </p>
                       )}
                     </div>
@@ -305,7 +321,7 @@ export default function EventDetail() {
                   <div className="flex items-center gap-3">
                     <Clock className="h-5 w-5 text-primary" />
                     <p className="font-medium">
-                      {format(new Date(event.startDate || event.start_date || ""), "h:mm a")}
+                      {formatDateTimeSafe(event.startDate || event.start_date, "h:mm a", "Not provided")}
                     </p>
                   </div>
                   {event.location && (
