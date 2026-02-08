@@ -324,16 +324,16 @@ export default function EventDetail() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Opportunity Details</CardTitle>
-                <CardDescription>Key information about this opportunity</CardDescription>
+                <CardTitle>Event Details</CardTitle>
+                <CardDescription>Key information about this event</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-6 md:grid-cols-2">
                 <div className="space-y-2">
-                  <p className="text-sm font-medium">Logo</p>
+                  <p className="text-sm font-medium">Event Image</p>
                   {(event.image_url || event.bannerUrl) ? (
                     <img
                       src={event.image_url || event.bannerUrl}
-                      alt={`${event.title} logo`}
+                      alt={`${event.title} image`}
                       className="h-24 w-24 rounded-lg object-cover"
                     />
                   ) : (
@@ -342,33 +342,31 @@ export default function EventDetail() {
                     </div>
                   )}
                   <p className="text-xs text-muted-foreground">
-                    Supported logo image JPG, JPEG, or PNG. Max 1 MB
+                    Supported image JPG, JPEG, or PNG.
                   </p>
-                  <p className="text-xs text-destructive">Logo required</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-sm font-medium">Opportunity Title</p>
+                  <p className="text-sm font-medium">Event Title</p>
                   <p className="text-sm">{event.title}</p>
-                  <p className="text-xs text-muted-foreground">Max 190 characters</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-sm font-medium">Organisation Name</p>
+                  <p className="text-sm font-medium">Organizer</p>
                   <p className="text-sm">{organizerName || "Not provided"}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-sm font-medium">Opportunity Type</p>
+                  <p className="text-sm font-medium">Event Type</p>
                   <p className="text-sm">{event.event_type || event.category || "Not provided"}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-sm font-medium">Opportunity Category</p>
+                  <p className="text-sm font-medium">Tags</p>
                   <p className="text-sm">{skillsText}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-sm font-medium">Link Festival/Campaign</p>
+                  <p className="text-sm font-medium">Festival/Campaign</p>
                   <p className="text-sm">{festivalCampaign || "Not provided"}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-sm font-medium">Company Website URL</p>
+                  <p className="text-sm font-medium">Website URL</p>
                   {companyWebsite ? (
                     <a
                       href={companyWebsite}
@@ -383,7 +381,7 @@ export default function EventDetail() {
                   )}
                 </div>
                 <div className="space-y-1">
-                  <p className="text-sm font-medium">Event Theme</p>
+                  <p className="text-sm font-medium">Theme</p>
                   <p className="text-sm">{themeText}</p>
                 </div>
               </CardContent>
@@ -391,10 +389,10 @@ export default function EventDetail() {
 
             <Card>
               <CardHeader>
-                <CardTitle>About the Opportunity</CardTitle>
+                <CardTitle>About the Event</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground">Opportunity Description</p>
+                <p className="text-sm text-muted-foreground">Event Description</p>
                 <p className="mt-2 text-sm">
                   {event.description || "No description provided."}
                 </p>
@@ -403,11 +401,11 @@ export default function EventDetail() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Skills to be assessed</CardTitle>
+                <CardTitle>Tags & Skills</CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">
-                  List required skills to attract participants with matching abilities or engage individuals eager to improve them
+                  Skills or tags that participants should know or want to learn.
                 </p>
                 <p className="mt-2 text-sm">{skillsText}</p>
               </CardContent>
@@ -415,7 +413,7 @@ export default function EventDetail() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Opportunity Mode & Participation Type</CardTitle>
+                <CardTitle>Mode & Participation Type</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-1">
@@ -428,7 +426,7 @@ export default function EventDetail() {
                   <p className="text-sm">Max: {event.team_size_max ?? event.team_size_min ?? 1}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-sm font-medium">Mode of Opportunity</p>
+                  <p className="text-sm font-medium">Mode</p>
                   <p className="text-sm">{event.mode || "Not provided"}</p>
                 </div>
                 <div className="space-y-1">

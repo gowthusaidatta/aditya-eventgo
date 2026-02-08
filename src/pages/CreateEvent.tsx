@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiClient } from "@/integrations/api/apiClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { EventMediaUpload } from "@/components/EventMediaUpload";
 import { Plus, Trash2, Calendar, Trophy, Users, Building2, Clock, MapPin } from "lucide-react";
 
 interface ScheduleItem {
@@ -65,6 +66,8 @@ export default function CreateEvent() {
   const [registrationFee, setRegistrationFee] = useState("0");
   const [teamSizeMin, setTeamSizeMin] = useState("1");
   const [teamSizeMax, setTeamSizeMax] = useState("5");
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
 
   // Schedule
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
@@ -167,6 +170,8 @@ export default function CreateEvent() {
         registration_fee: parseFloat(registrationFee) || 0,
         team_size_min: isHackathon ? parseInt(teamSizeMin) : 1,
         team_size_max: isHackathon ? parseInt(teamSizeMax) : 1,
+        image_url: imageUrl,
+        video_url: videoUrl,
         prizes: prizes.filter(p => p.position && p.amount).map(({ id, ...p }) => p),
         sponsors: sponsors.filter(s => s.name).map(({ id, ...s }) => s),
         status,
@@ -300,6 +305,13 @@ export default function CreateEvent() {
                     rows={8}
                   />
                 </div>
+
+                <EventMediaUpload
+                  imageUrl={imageUrl}
+                  videoUrl={videoUrl}
+                  onImageChange={setImageUrl}
+                  onVideoChange={setVideoUrl}
+                />
 
                 <div className="flex items-center space-x-4">
                   <Switch
