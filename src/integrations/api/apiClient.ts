@@ -401,7 +401,11 @@ class ApiClient {
       const response = await this.client.get("/users", {
         params: { ids: userIds.join(",") },
       });
-      return response.data;
+      const items = Array.isArray(response.data) ? response.data : [];
+      return items.map((item) => ({
+        ...item,
+        userId: item.userId || item.user_id,
+      }));
     } catch (error) {
       console.error("Error fetching users:", error);
       throw error;
@@ -508,6 +512,26 @@ class ApiClient {
       return response.data;
     } catch (error) {
       console.error("Error fetching platform roles:", error);
+      throw error;
+    }
+  }
+
+  async getRolePermissions() {
+    try {
+      const response = await this.client.get("/permissions/roles");
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching role permissions:", error);
+      throw error;
+    }
+  }
+
+  async updateRolePermissions(roleId: string, permissions: string[]) {
+    try {
+      const response = await this.client.put(`/permissions/roles/${roleId}`, { permissions });
+      return response.data;
+    } catch (error) {
+      console.error("Error updating role permissions:", error);
       throw error;
     }
   }

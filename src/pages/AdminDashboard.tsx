@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useToast } from "@/hooks/use-toast";
 import { EventMediaUpload } from "@/components/EventMediaUpload";
 import { EventShareDialog } from "@/components/EventShareDialog";
+import { EventPermissionsManager } from "@/components/EventPermissionsManager";
 import { 
   Users, Calendar, Edit, Trash2, Plus, 
   Shield, Search, UserCheck, UserX, Building2, GraduationCap, Share2, BarChart3
@@ -34,8 +35,9 @@ interface User {
   college_id: string | null;
   branch: string | null;
   is_verified: boolean;
-  created_at: string;
   college_role?: string | null;
+  permissions?: string[];
+  created_at?: string;
 }
 
 interface Event {
@@ -52,7 +54,33 @@ interface Event {
   video_url: string | null;
   created_by: string | null;
   is_featured: boolean | null;
+  mode?: string | null;
+  online_link?: string | null;
+  registration_deadline?: string | null;
+  is_hackathon?: boolean | null;
+  team_size_min?: number | null;
+  team_size_max?: number | null;
+  tags?: string[];
+  venue_details?: Record<string, unknown> | null;
+  created_at?: string;
 }
+
+type EditableEvent = Event & {
+  tags_input?: string;
+  skills_input?: string;
+  festival_campaign?: string;
+  website_url?: string;
+  theme?: string;
+  participation_type?: "individual" | "team";
+  team_size_min_input?: string;
+  team_size_max_input?: string;
+  who_can_register?: string;
+  college_organization?: string;
+  gender_criteria?: string;
+  mode?: string;
+  online_link?: string;
+  registration_deadline?: string;
+};
 
 export default function AdminDashboard() {
   const { user, profile, loading } = useAuth();
@@ -76,8 +104,13 @@ export default function AdminDashboard() {
   const [filterVerified, setFilterVerified] = useState<string>("all");
   const [isAddEventOpen, setIsAddEventOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [editingEvent, setEditingEvent] = useState<Event | null>(null);
+  const [editingEvent, setEditingEvent] = useState<EditableEvent | null>(null);
+  const [editFormError, setEditFormError] = useState<string | null>(null);
   const [sharingEvent, setSharingEvent] = useState<Event | null>(null);
+  const [rolePermissions, setRolePermissions] = useState<Record<string, string[]>>({});
+  const [rolePermissionsLoading, setRolePermissionsLoading] = useState(false);
+  const [selectedRole, setSelectedRole] = useState("college:principal");
+  const [rolePermissionsDraft, setRolePermissionsDraft] = useState<string[]>([]);
 
   const roleLabel: Record<string, string> = {
     principal: "Principal",
@@ -86,6 +119,24 @@ export default function AdminDashboard() {
     student_coordinator: "Student Coordinator",
     host: "Event Host",
   };
+
+  const permissionOptions = [
+    { id: "create_event", label: "Create event" },
+    { id: "edit_event", label: "Edit event" },
+    { id: "delete_event", label: "Delete event" },
+    { id: "manage_users", label: "Manage users" },
+    { id: "manage_registrations", label: "Manage registrations" },
+    { id: "grant_permissions", label: "Grant permissions" },
+    { id: "full_access", label: "Full access" },
+  ];
+
+  const collegeRoleOptions = [
+    { id: "college:principal", label: "Principal" },
+    { id: "college:dean", label: "Dean" },
+    { id: "college:staff_coordinator", label: "Staff Coordinator" },
+    { id: "college:student_coordinator", label: "Student Coordinator" },
+    { id: "college:host", label: "Event Host" },
+  ];
 
   // New event form state
   const [newEvent, setNewEvent] = useState({
@@ -99,6 +150,20 @@ export default function AdminDashboard() {
     image_url: null as string | null,
     video_url: null as string | null,
     is_featured: false,
+    mode: "offline",
+    online_link: "",
+    registration_deadline: "",
+    tags_input: "",
+    skills_input: "",
+    festival_campaign: "",
+    website_url: "",
+    theme: "",
+    participation_type: "individual" as "individual" | "team",
+    team_size_min_input: "1",
+    team_size_max_input: "1",
+    who_can_register: "Everyone can apply",
+    college_organization: "Everyone can apply",
+    gender_criteria: "Everyone can apply",
   });
 
   useEffect(() => {
@@ -110,8 +175,13 @@ export default function AdminDashboard() {
     if (user && profile?.user_type === "admin") {
       fetchUsers();
       fetchEvents();
+      fetchRolePermissions();
     }
   }, [user, profile, loading, navigate]);
+
+  useEffect(() => {
+    setRolePermissionsDraft(rolePermissions[selectedRole] || []);
+  }, [selectedRole, rolePermissions]);
 
   const fetchUsers = async () => {
     const data = await apiClient.listUsers();
@@ -136,6 +206,25 @@ export default function AdminDashboard() {
       }))
       .sort((a, b) => new Date(b.created_at || b.createdAt || 0).getTime() - new Date(a.created_at || a.createdAt || 0).getTime());
     setEvents(normalized);
+  };
+
+  const fetchRolePermissions = async () => {
+    setRolePermissionsLoading(true);
+    try {
+      const items = await apiClient.getRolePermissions();
+      const map: Record<string, string[]> = {};
+      (Array.isArray(items) ? items : []).forEach((item) => {
+        if (item?.role_id) {
+          map[item.role_id] = Array.isArray(item.permissions) ? item.permissions : [];
+        }
+      });
+      setRolePermissions(map);
+      setRolePermissionsDraft(map[selectedRole] || []);
+    } catch (error) {
+      console.error("Error loading role permissions:", error);
+    } finally {
+      setRolePermissionsLoading(false);
+    }
   };
 
   const getUserRole = (userId: string) => {
@@ -193,6 +282,7 @@ export default function AdminDashboard() {
         roll_number: editingUser.roll_number,
         college_id: editingUser.college_id,
         branch: editingUser.branch,
+        permissions: editingUser.permissions || [],
       });
     } catch (error) {
       toast({
@@ -212,6 +302,70 @@ export default function AdminDashboard() {
   };
 
   const handleAddEvent = async () => {
+    const eventMode = newEvent.mode || "offline";
+    if (eventMode !== "online" && !newEvent.location.trim()) {
+      toast({
+        title: "Error",
+        description: "Location is required for offline or hybrid events",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (eventMode !== "offline" && !newEvent.online_link.trim()) {
+      toast({
+        title: "Error",
+        description: "Online link is required for online or hybrid events",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (newEvent.registration_deadline && new Date(newEvent.registration_deadline) > new Date(newEvent.start_date)) {
+      toast({
+        title: "Error",
+        description: "Registration deadline must be before the start date",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (newEvent.website_url.trim() && !/^https?:\/\//i.test(newEvent.website_url.trim())) {
+      toast({
+        title: "Error",
+        description: "Website URL must start with http:// or https://",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const cleanTags = newEvent.tags_input
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length > 0);
+    const cleanSkills = newEvent.skills_input
+      .split(",")
+      .map((skill) => skill.trim())
+      .filter((skill) => skill.length > 0);
+    const participationType =
+      newEvent.participation_type || (newEvent.event_type === "hackathon" ? "team" : "individual");
+    const useTeamSizes = participationType === "team" || newEvent.event_type === "hackathon";
+    const minTeamSize = parseInt(newEvent.team_size_min_input, 10);
+    const maxTeamSize = parseInt(newEvent.team_size_max_input, 10);
+    if (useTeamSizes && (
+      Number.isNaN(minTeamSize) ||
+      Number.isNaN(maxTeamSize) ||
+      minTeamSize < 1 ||
+      maxTeamSize < minTeamSize
+    )) {
+      toast({
+        title: "Error",
+        description: "Please enter a valid team size range",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       await apiClient.createEvent({
         title: newEvent.title,
@@ -221,9 +375,29 @@ export default function AdminDashboard() {
         start_date: newEvent.start_date,
         end_date: newEvent.end_date || null,
         location: newEvent.location,
+        mode: eventMode,
+        online_link: eventMode !== "offline" ? newEvent.online_link.trim() : null,
+        registration_deadline: newEvent.registration_deadline
+          ? new Date(newEvent.registration_deadline).toISOString()
+          : null,
+        is_hackathon: newEvent.event_type === "hackathon",
+        team_size_min: useTeamSizes ? minTeamSize : 1,
+        team_size_max: useTeamSizes ? maxTeamSize : 1,
         image_url: newEvent.image_url,
         video_url: newEvent.video_url,
         is_featured: newEvent.is_featured,
+        tags: cleanTags,
+        venue_details: {
+          festival_campaign: newEvent.festival_campaign.trim() || null,
+          website: newEvent.website_url.trim() || null,
+          theme: newEvent.theme.trim() || null,
+          skills: cleanSkills,
+          registration_criteria: {
+            who_can_register: newEvent.who_can_register.trim() || "Everyone can apply",
+            college_organization: newEvent.college_organization.trim() || "Everyone can apply",
+            gender: newEvent.gender_criteria.trim() || "Everyone can apply",
+          },
+        },
         created_by: user?.id,
       });
     } catch (error) {
@@ -251,12 +425,96 @@ export default function AdminDashboard() {
       image_url: null,
       video_url: null,
       is_featured: false,
+      mode: "offline",
+      online_link: "",
+      registration_deadline: "",
+      tags_input: "",
+      skills_input: "",
+      festival_campaign: "",
+      website_url: "",
+      theme: "",
+      participation_type: "individual",
+      team_size_min_input: "1",
+      team_size_max_input: "1",
+      who_can_register: "Everyone can apply",
+      college_organization: "Everyone can apply",
+      gender_criteria: "Everyone can apply",
     });
     fetchEvents();
   };
 
   const handleUpdateEvent = async () => {
     if (!editingEvent) return;
+
+    setEditFormError(null);
+    const eventMode = editingEvent.mode || "offline";
+    if (eventMode !== "online" && !editingEvent.location?.trim()) {
+      setEditFormError("Location is required for offline or hybrid events.");
+      toast({
+        title: "Error",
+        description: "Location is required for offline or hybrid events",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (eventMode !== "offline" && !editingEvent.online_link?.trim()) {
+      setEditFormError("Online link is required for online or hybrid events.");
+      toast({
+        title: "Error",
+        description: "Online link is required for online or hybrid events",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (editingEvent.registration_deadline && new Date(editingEvent.registration_deadline) > new Date(editingEvent.start_date)) {
+      setEditFormError("Registration deadline must be before the start date.");
+      toast({
+        title: "Error",
+        description: "Registration deadline must be before the start date",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (editingEvent.website_url?.trim() && !/^https?:\/\//i.test(editingEvent.website_url.trim())) {
+      setEditFormError("Website URL must start with http:// or https://.");
+      toast({
+        title: "Error",
+        description: "Website URL must start with http:// or https://",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const cleanTags = (editingEvent.tags_input || "")
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length > 0);
+    const cleanSkills = (editingEvent.skills_input || "")
+      .split(",")
+      .map((skill) => skill.trim())
+      .filter((skill) => skill.length > 0);
+    const participationType =
+      editingEvent.participation_type || (editingEvent.event_type === "hackathon" ? "team" : "individual");
+    const useTeamSizes = participationType === "team" || editingEvent.event_type === "hackathon";
+    const minTeamSize = parseInt(editingEvent.team_size_min_input || "1", 10);
+    const maxTeamSize = parseInt(editingEvent.team_size_max_input || "1", 10);
+    if (useTeamSizes && (
+      Number.isNaN(minTeamSize) ||
+      Number.isNaN(maxTeamSize) ||
+      minTeamSize < 1 ||
+      maxTeamSize < minTeamSize
+    )) {
+      setEditFormError("Please enter a valid team size range.");
+      toast({
+        title: "Error",
+        description: "Please enter a valid team size range",
+        variant: "destructive",
+      });
+      return;
+    }
 
     try {
       await apiClient.updateEvent(editingEvent.id, {
@@ -267,9 +525,29 @@ export default function AdminDashboard() {
         start_date: editingEvent.start_date,
         end_date: editingEvent.end_date,
         location: editingEvent.location,
+        mode: eventMode,
+        online_link: eventMode !== "offline" ? editingEvent.online_link?.trim() : null,
+        registration_deadline: editingEvent.registration_deadline
+          ? new Date(editingEvent.registration_deadline).toISOString()
+          : null,
+        is_hackathon: editingEvent.event_type === "hackathon",
+        team_size_min: useTeamSizes ? minTeamSize : 1,
+        team_size_max: useTeamSizes ? maxTeamSize : 1,
         image_url: editingEvent.image_url,
         video_url: editingEvent.video_url,
         is_featured: editingEvent.is_featured,
+        tags: cleanTags,
+        venue_details: {
+          festival_campaign: editingEvent.festival_campaign?.trim() || null,
+          website: editingEvent.website_url?.trim() || null,
+          theme: editingEvent.theme?.trim() || null,
+          skills: cleanSkills,
+          registration_criteria: {
+            who_can_register: editingEvent.who_can_register?.trim() || "Everyone can apply",
+            college_organization: editingEvent.college_organization?.trim() || "Everyone can apply",
+            gender: editingEvent.gender_criteria?.trim() || "Everyone can apply",
+          },
+        },
       });
     } catch (error) {
       toast({
@@ -329,6 +607,42 @@ export default function AdminDashboard() {
     verified: users.filter(u => u.is_verified).length,
     pending: users.filter(u => !u.is_verified && u.user_type === "college").length,
     totalEvents: events.length,
+  };
+
+  const normalizeEditableEvent = (event: Event): EditableEvent => {
+    const venueDetails = (event.venue_details || {}) as Record<string, unknown>;
+    const registrationCriteria =
+      (venueDetails.registration_criteria as Record<string, unknown> | undefined) || {};
+    const tagsInput = Array.isArray(event.tags) ? event.tags.join(", ") : "";
+    const skillsInput = Array.isArray(venueDetails.skills)
+      ? (venueDetails.skills as string[]).filter(Boolean).join(", ")
+      : typeof venueDetails.skills === "string"
+        ? venueDetails.skills
+        : "";
+    return {
+      ...event,
+      tags_input: tagsInput,
+      skills_input: skillsInput,
+      festival_campaign:
+        (typeof venueDetails.festival_campaign === "string" && venueDetails.festival_campaign) || "",
+      website_url: (typeof venueDetails.website === "string" && venueDetails.website) || "",
+      theme: (typeof venueDetails.theme === "string" && venueDetails.theme) || "",
+      participation_type: event.team_size_max && event.team_size_max > 1 ? "team" : "individual",
+      team_size_min_input: String(event.team_size_min ?? 1),
+      team_size_max_input: String(event.team_size_max ?? event.team_size_min ?? 1),
+      who_can_register:
+        (typeof registrationCriteria.who_can_register === "string" && registrationCriteria.who_can_register) ||
+        "Everyone can apply",
+      college_organization:
+        (typeof registrationCriteria.college_organization === "string" && registrationCriteria.college_organization) ||
+        "Everyone can apply",
+      gender_criteria:
+        (typeof registrationCriteria.gender === "string" && registrationCriteria.gender) ||
+        "Everyone can apply",
+      mode: event.mode || "offline",
+      online_link: event.online_link || "",
+      registration_deadline: event.registration_deadline || "",
+    };
   };
 
   if (loading) {
@@ -433,6 +747,10 @@ export default function AdminDashboard() {
             <TabsTrigger value="events" className="gap-2">
               <Calendar className="h-4 w-4" />
               Events
+            </TabsTrigger>
+            <TabsTrigger value="permissions" className="gap-2">
+              <Shield className="h-4 w-4" />
+              Permissions
             </TabsTrigger>
           </TabsList>
 
@@ -591,6 +909,35 @@ export default function AdminDashboard() {
                                     />
                                   </div>
                                 )}
+                                {editingUser.user_type === "college" && (
+                                  <div className="grid gap-2">
+                                    <Label>User Permissions</Label>
+                                    <div className="grid gap-2 sm:grid-cols-2">
+                                      {permissionOptions.map((option) => (
+                                        <label key={option.id} className="flex items-center gap-2 text-sm">
+                                          <input
+                                            type="checkbox"
+                                            className="h-4 w-4"
+                                            checked={(editingUser.permissions || []).includes(option.id)}
+                                            onChange={(event) => {
+                                              const next = new Set(editingUser.permissions || []);
+                                              if (event.target.checked) {
+                                                next.add(option.id);
+                                              } else {
+                                                next.delete(option.id);
+                                              }
+                                              setEditingUser({ ...editingUser, permissions: Array.from(next) });
+                                            }}
+                                          />
+                                          {option.label}
+                                        </label>
+                                      ))}
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                      These permissions override role defaults for this user.
+                                    </p>
+                                  </div>
+                                )}
                               </div>
                             )}
                             <DialogFooter>
@@ -669,7 +1016,16 @@ export default function AdminDashboard() {
                         </div>
                         <div className="grid gap-2">
                           <Label>Event Type</Label>
-                          <Select value={newEvent.event_type} onValueChange={(val) => setNewEvent({ ...newEvent, event_type: val })}>
+                          <Select
+                            value={newEvent.event_type}
+                            onValueChange={(val) =>
+                              setNewEvent({
+                                ...newEvent,
+                                event_type: val,
+                                participation_type: val === "hackathon" ? "team" : newEvent.participation_type,
+                              })
+                            }
+                          >
                             <SelectTrigger>
                               <SelectValue />
                             </SelectTrigger>
@@ -704,6 +1060,141 @@ export default function AdminDashboard() {
                             value={newEvent.location}
                             onChange={(e) => setNewEvent({ ...newEvent, location: e.target.value })}
                             placeholder="Event location"
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>Event Mode</Label>
+                          <Select
+                            value={newEvent.mode}
+                            onValueChange={(val) => setNewEvent({ ...newEvent, mode: val })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="offline">Offline</SelectItem>
+                              <SelectItem value="online">Online</SelectItem>
+                              <SelectItem value="hybrid">Hybrid</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {newEvent.mode !== "offline" && (
+                          <div className="grid gap-2">
+                            <Label>Online Link</Label>
+                            <Input
+                              value={newEvent.online_link}
+                              onChange={(e) => setNewEvent({ ...newEvent, online_link: e.target.value })}
+                              placeholder="https://..."
+                            />
+                          </div>
+                        )}
+                        <div className="grid gap-2">
+                          <Label>Registration Deadline</Label>
+                          <Input
+                            type="datetime-local"
+                            value={newEvent.registration_deadline}
+                            onChange={(e) => setNewEvent({ ...newEvent, registration_deadline: e.target.value })}
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>Tags</Label>
+                          <Input
+                            value={newEvent.tags_input}
+                            onChange={(e) => setNewEvent({ ...newEvent, tags_input: e.target.value })}
+                            placeholder="e.g., AI, Web, Design"
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>Skills or Tags to Learn</Label>
+                          <Input
+                            value={newEvent.skills_input}
+                            onChange={(e) => setNewEvent({ ...newEvent, skills_input: e.target.value })}
+                            placeholder="e.g., React, Python, UI/UX"
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>Festival/Campaign</Label>
+                          <Input
+                            value={newEvent.festival_campaign}
+                            onChange={(e) => setNewEvent({ ...newEvent, festival_campaign: e.target.value })}
+                            placeholder="Festival or campaign name"
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>Website URL</Label>
+                          <Input
+                            value={newEvent.website_url}
+                            onChange={(e) => setNewEvent({ ...newEvent, website_url: e.target.value })}
+                            placeholder="https://..."
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>Theme</Label>
+                          <Input
+                            value={newEvent.theme}
+                            onChange={(e) => setNewEvent({ ...newEvent, theme: e.target.value })}
+                            placeholder="e.g., Sustainability"
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>Participation Type</Label>
+                          <Select
+                            value={newEvent.participation_type}
+                            onValueChange={(val) => setNewEvent({ ...newEvent, participation_type: val as "individual" | "team" })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="individual">Individual</SelectItem>
+                              <SelectItem value="team">Team</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {(newEvent.participation_type === "team" || newEvent.event_type === "hackathon") && (
+                          <>
+                            <div className="grid gap-2">
+                              <Label>Min Team Size</Label>
+                              <Input
+                                type="number"
+                                min="1"
+                                value={newEvent.team_size_min_input}
+                                onChange={(e) => setNewEvent({ ...newEvent, team_size_min_input: e.target.value })}
+                              />
+                            </div>
+                            <div className="grid gap-2">
+                              <Label>Max Team Size</Label>
+                              <Input
+                                type="number"
+                                min="1"
+                                value={newEvent.team_size_max_input}
+                                onChange={(e) => setNewEvent({ ...newEvent, team_size_max_input: e.target.value })}
+                              />
+                            </div>
+                          </>
+                        )}
+                        <div className="grid gap-2">
+                          <Label>Who can register?</Label>
+                          <Input
+                            value={newEvent.who_can_register}
+                            onChange={(e) => setNewEvent({ ...newEvent, who_can_register: e.target.value })}
+                            placeholder="Everyone can apply"
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>College/Organization</Label>
+                          <Input
+                            value={newEvent.college_organization}
+                            onChange={(e) => setNewEvent({ ...newEvent, college_organization: e.target.value })}
+                            placeholder="Everyone can apply"
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>Gender</Label>
+                          <Input
+                            value={newEvent.gender_criteria}
+                            onChange={(e) => setNewEvent({ ...newEvent, gender_criteria: e.target.value })}
+                            placeholder="Everyone can apply"
                           />
                         </div>
                         <EventMediaUpload
@@ -747,7 +1238,14 @@ export default function AdminDashboard() {
                         </Button>
                         <Dialog>
                           <DialogTrigger asChild>
-                            <Button variant="outline" size="sm" onClick={() => setEditingEvent(event)}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setEditFormError(null);
+                                setEditingEvent(normalizeEditableEvent(event));
+                              }}
+                            >
                               <Edit className="mr-1 h-4 w-4" />
                               Edit
                             </Button>
@@ -781,10 +1279,164 @@ export default function AdminDashboard() {
                                   />
                                 </div>
                                 <div className="grid gap-2">
+                                  <Label>Event Type</Label>
+                                  <Select
+                                    value={editingEvent.event_type}
+                                    onValueChange={(val) =>
+                                      setEditingEvent({
+                                        ...editingEvent,
+                                        event_type: val,
+                                        participation_type: val === "hackathon" ? "team" : editingEvent.participation_type,
+                                      })
+                                    }
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="workshop">Workshop</SelectItem>
+                                      <SelectItem value="seminar">Seminar</SelectItem>
+                                      <SelectItem value="hackathon">Hackathon</SelectItem>
+                                      <SelectItem value="fest">Fest</SelectItem>
+                                      <SelectItem value="competition">Competition</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="grid gap-2">
                                   <Label>Location</Label>
                                   <Input
                                     value={editingEvent.location || ""}
                                     onChange={(e) => setEditingEvent({ ...editingEvent, location: e.target.value })}
+                                  />
+                                </div>
+                                <div className="grid gap-2">
+                                  <Label>Event Mode</Label>
+                                  <Select
+                                    value={editingEvent.mode || "offline"}
+                                    onValueChange={(val) => setEditingEvent({ ...editingEvent, mode: val })}
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="offline">Offline</SelectItem>
+                                      <SelectItem value="online">Online</SelectItem>
+                                      <SelectItem value="hybrid">Hybrid</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                {(editingEvent.mode || "offline") !== "offline" && (
+                                  <div className="grid gap-2">
+                                    <Label>Online Link</Label>
+                                    <Input
+                                      value={editingEvent.online_link || ""}
+                                      onChange={(e) => setEditingEvent({ ...editingEvent, online_link: e.target.value })}
+                                    />
+                                  </div>
+                                )}
+                                <div className="grid gap-2">
+                                  <Label>Registration Deadline</Label>
+                                  <Input
+                                    type="datetime-local"
+                                    value={editingEvent.registration_deadline || ""}
+                                    onChange={(e) => setEditingEvent({ ...editingEvent, registration_deadline: e.target.value })}
+                                  />
+                                </div>
+                                <div className="grid gap-2">
+                                  <Label>Tags</Label>
+                                  <Input
+                                    value={editingEvent.tags_input || ""}
+                                    onChange={(e) => setEditingEvent({ ...editingEvent, tags_input: e.target.value })}
+                                    placeholder="e.g., AI, Web, Design"
+                                  />
+                                </div>
+                                <div className="grid gap-2">
+                                  <Label>Skills or Tags to Learn</Label>
+                                  <Input
+                                    value={editingEvent.skills_input || ""}
+                                    onChange={(e) => setEditingEvent({ ...editingEvent, skills_input: e.target.value })}
+                                    placeholder="e.g., React, Python, UI/UX"
+                                  />
+                                </div>
+                                <div className="grid gap-2">
+                                  <Label>Festival/Campaign</Label>
+                                  <Input
+                                    value={editingEvent.festival_campaign || ""}
+                                    onChange={(e) => setEditingEvent({ ...editingEvent, festival_campaign: e.target.value })}
+                                  />
+                                </div>
+                                <div className="grid gap-2">
+                                  <Label>Website URL</Label>
+                                  <Input
+                                    value={editingEvent.website_url || ""}
+                                    onChange={(e) => setEditingEvent({ ...editingEvent, website_url: e.target.value })}
+                                  />
+                                </div>
+                                <div className="grid gap-2">
+                                  <Label>Theme</Label>
+                                  <Input
+                                    value={editingEvent.theme || ""}
+                                    onChange={(e) => setEditingEvent({ ...editingEvent, theme: e.target.value })}
+                                  />
+                                </div>
+                                <div className="grid gap-2">
+                                  <Label>Participation Type</Label>
+                                  <Select
+                                    value={editingEvent.participation_type || "individual"}
+                                    onValueChange={(val) =>
+                                      setEditingEvent({ ...editingEvent, participation_type: val as "individual" | "team" })
+                                    }
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="individual">Individual</SelectItem>
+                                      <SelectItem value="team">Team</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                {((editingEvent.participation_type || "individual") === "team" || editingEvent.event_type === "hackathon") && (
+                                  <>
+                                    <div className="grid gap-2">
+                                      <Label>Min Team Size</Label>
+                                      <Input
+                                        type="number"
+                                        min="1"
+                                        value={editingEvent.team_size_min_input || "1"}
+                                        onChange={(e) => setEditingEvent({ ...editingEvent, team_size_min_input: e.target.value })}
+                                      />
+                                    </div>
+                                    <div className="grid gap-2">
+                                      <Label>Max Team Size</Label>
+                                      <Input
+                                        type="number"
+                                        min="1"
+                                        value={editingEvent.team_size_max_input || "1"}
+                                        onChange={(e) => setEditingEvent({ ...editingEvent, team_size_max_input: e.target.value })}
+                                      />
+                                    </div>
+                                  </>
+                                )}
+                                <div className="grid gap-2">
+                                  <Label>Who can register?</Label>
+                                  <Input
+                                    value={editingEvent.who_can_register || ""}
+                                    onChange={(e) => setEditingEvent({ ...editingEvent, who_can_register: e.target.value })}
+                                  />
+                                </div>
+                                <div className="grid gap-2">
+                                  <Label>College/Organization</Label>
+                                  <Input
+                                    value={editingEvent.college_organization || ""}
+                                    onChange={(e) => setEditingEvent({ ...editingEvent, college_organization: e.target.value })}
+                                  />
+                                </div>
+                                <div className="grid gap-2">
+                                  <Label>Gender</Label>
+                                  <Input
+                                    value={editingEvent.gender_criteria || ""}
+                                    onChange={(e) => setEditingEvent({ ...editingEvent, gender_criteria: e.target.value })}
                                   />
                                 </div>
                                 <EventMediaUpload
@@ -793,11 +1445,29 @@ export default function AdminDashboard() {
                                   onImageChange={(url) => setEditingEvent({ ...editingEvent, image_url: url })}
                                   onVideoChange={(url) => setEditingEvent({ ...editingEvent, video_url: url })}
                                 />
+                                {editFormError && (
+                                  <p className="text-sm text-destructive">{editFormError}</p>
+                                )}
                               </div>
                             )}
                             <DialogFooter>
                               <Button onClick={handleUpdateEvent}>Save Changes</Button>
                             </DialogFooter>
+                          </DialogContent>
+                        </Dialog>
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button variant="outline" size="sm">
+                              <Shield className="mr-1 h-4 w-4" />
+                              Permissions
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent className="max-h-[90vh] overflow-y-auto">
+                            <DialogHeader>
+                              <DialogTitle>Event Permissions</DialogTitle>
+                              <DialogDescription>Manage access for this event</DialogDescription>
+                            </DialogHeader>
+                            <EventPermissionsManager eventId={event.id} eventTitle={event.title} />
                           </DialogContent>
                         </Dialog>
                         <Button variant="destructive" size="sm" onClick={() => handleDeleteEvent(event.id)}>
@@ -811,6 +1481,138 @@ export default function AdminDashboard() {
                       No events yet. Create your first event!
                     </div>
                   )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Permissions Tab */}
+          <TabsContent value="permissions" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Role Permissions</CardTitle>
+                <CardDescription>Define default permissions for college roles</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>College Role</Label>
+                    <Select value={selectedRole} onValueChange={setSelectedRole}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {collegeRoleOptions.map((role) => (
+                          <SelectItem key={role.id} value={role.id}>
+                            {role.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-end">
+                    <Button
+                      onClick={async () => {
+                        try {
+                          await apiClient.updateRolePermissions(selectedRole, rolePermissionsDraft);
+                          await fetchRolePermissions();
+                          toast({ title: "Permissions saved", description: "Role permissions updated." });
+                        } catch (error) {
+                          toast({ title: "Error", description: "Failed to save permissions", variant: "destructive" });
+                        }
+                      }}
+                      disabled={rolePermissionsLoading}
+                    >
+                      Save Role Permissions
+                    </Button>
+                  </div>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {permissionOptions.map((option) => (
+                    <label key={option.id} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        checked={rolePermissionsDraft.includes(option.id)}
+                        onChange={(event) => {
+                          const next = new Set(rolePermissionsDraft);
+                          if (event.target.checked) {
+                            next.add(option.id);
+                          } else {
+                            next.delete(option.id);
+                          }
+                          setRolePermissionsDraft(Array.from(next));
+                        }}
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Permissions Tab */}
+          <TabsContent value="permissions" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Role Permissions</CardTitle>
+                <CardDescription>Set default permissions for each college role</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>College Role</Label>
+                    <Select value={selectedRole} onValueChange={setSelectedRole}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {collegeRoleOptions.map((role) => (
+                          <SelectItem key={role.id} value={role.id}>
+                            {role.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-end">
+                    <Button
+                      onClick={async () => {
+                        try {
+                          await apiClient.updateRolePermissions(selectedRole, rolePermissionsDraft);
+                          await fetchRolePermissions();
+                          toast({ title: "Permissions saved", description: "Role permissions updated." });
+                        } catch (error) {
+                          toast({ title: "Error", description: "Failed to save permissions", variant: "destructive" });
+                        }
+                      }}
+                      disabled={rolePermissionsLoading}
+                    >
+                      Save Role Permissions
+                    </Button>
+                  </div>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {permissionOptions.map((option) => (
+                    <label key={option.id} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        checked={rolePermissionsDraft.includes(option.id)}
+                        onChange={(event) => {
+                          const next = new Set(rolePermissionsDraft);
+                          if (event.target.checked) {
+                            next.add(option.id);
+                          } else {
+                            next.delete(option.id);
+                          }
+                          setRolePermissionsDraft(Array.from(next));
+                        }}
+                      />
+                      {option.label}
+                    </label>
+                  ))}
                 </div>
               </CardContent>
             </Card>

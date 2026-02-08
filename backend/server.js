@@ -1205,6 +1205,65 @@ app.get("/roles/platform", requireAuth, async (req, res) => {
   }
 });
 
+app.get("/permissions/roles", requireAuth, async (req, res) => {
+  try {
+    if (!ROLES_TABLE) {
+      res.status(500).json({ message: "ROLES_TABLE is not configured" });
+      return;
+    }
+
+    const data = await ddb.send(
+      new ScanCommand({
+        TableName: ROLES_TABLE,
+        FilterExpression: "role_type = :role_type",
+        ExpressionAttributeValues: {
+          ":role_type": "college_role_permissions",
+        },
+      })
+    );
+
+    res.json(data.Items || []);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch role permissions" });
+  }
+});
+
+app.put("/permissions/roles/:roleId", requireAuth, async (req, res) => {
+  try {
+    if (!ROLES_TABLE) {
+      res.status(500).json({ message: "ROLES_TABLE is not configured" });
+      return;
+    }
+
+    const permissions = Array.isArray(req.body?.permissions) ? req.body.permissions : null;
+    if (!permissions) {
+      res.status(400).json({ message: "permissions array is required" });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const item = {
+      role_id: req.params.roleId,
+      role_type: "college_role_permissions",
+      permissions,
+      updated_by: req.user.sub,
+      updated_at: now,
+      created_at: req.body?.created_at || now,
+    };
+
+    await ddb.send(
+      new PutCommand({
+        TableName: ROLES_TABLE,
+        Item: item,
+      })
+    );
+
+    res.json(item);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to update role permissions" });
+  }
+});
+
 app.get("/events/:eventId/permissions", requireAuth, async (req, res) => {
   try {
     if (!EVENT_PERMISSIONS_TABLE) {

@@ -2,7 +2,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCognitoAuth } from "@/contexts/CognitoAuthContext";
-import { Menu, X, LogOut, User, LayoutDashboard } from "lucide-react";
+import { Menu, X, LogOut, User, LayoutDashboard, ArrowLeft } from "lucide-react";
 import { useState } from "react";
 import {
   DropdownMenu,
@@ -19,6 +19,7 @@ export function Header() {
   const { logout } = useCognitoAuth();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const canGoBack = typeof window !== "undefined" && window.history.length > 1;
 
   const handleSignOut = async () => {
     logout();
@@ -43,13 +44,24 @@ export function Header() {
     <header className="sticky top-0 z-50 w-full border-b border-secondary/20 bg-secondary/95 backdrop-blur supports-[backdrop-filter]:bg-secondary/80">
       <div className="container flex h-16 items-center justify-between">
         {/* Logo Section */}
-        <Link to="/" className="flex items-center gap-4">
-          <img src={eventgoLogo} alt="EventGo" className="h-10 w-auto object-contain" />
-          <div className="hidden items-center gap-2 sm:flex">
-            <span className="text-xs text-white/60">in collaboration with</span>
-            <img src={adityaLogo} alt="Aditya University" className="h-8 w-auto object-contain" />
-          </div>
-        </Link>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-white hover:bg-white/10"
+            onClick={() => (canGoBack ? navigate(-1) : navigate("/"))}
+            title="Back"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <Link to="/" className="flex items-center gap-4">
+            <img src={eventgoLogo} alt="EventGo" className="h-10 w-auto object-contain" />
+            <div className="hidden items-center gap-2 sm:flex">
+              <span className="text-xs text-white/60">in collaboration with</span>
+              <img src={adityaLogo} alt="Aditya University" className="h-8 w-auto object-contain" />
+            </div>
+          </Link>
+        </div>
 
         {/* Desktop Navigation */}
         <nav className="hidden items-center gap-6 md:flex">

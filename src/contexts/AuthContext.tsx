@@ -24,6 +24,7 @@ interface Profile {
   college_id: string | null;
   is_verified: boolean;
   college_role?: CollegeRole | null;
+  permissions?: string[];
 }
 
 interface AuthContextType {

@@ -11,12 +11,13 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, Users, BarChart3, PlusCircle, Eye, Edit, Trash2, UserCheck, UserX, AlertCircle, Share2 } from "lucide-react";
+import { Calendar, Users, BarChart3, PlusCircle, Eye, Edit, Trash2, UserCheck, UserX, AlertCircle, Share2, Shield } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { apiClient } from "@/integrations/api/apiClient";
 import { useToast } from "@/hooks/use-toast";
 import { EventMediaUpload } from "@/components/EventMediaUpload";
 import { EventShareDialog } from "@/components/EventShareDialog";
+import { EventPermissionsManager } from "@/components/EventPermissionsManager";
 
 interface Event {
   id: string;
@@ -82,6 +83,7 @@ export default function CollegeDashboard() {
   const [editingEvent, setEditingEvent] = useState<EditableEvent | null>(null);
   const [sharingEvent, setSharingEvent] = useState<Event | null>(null);
   const [editFormError, setEditFormError] = useState<string | null>(null);
+  const [rolePermissions, setRolePermissions] = useState<Record<string, string[]>>({});
 
   // New event form
   const [newEvent, setNewEvent] = useState({
@@ -111,11 +113,40 @@ export default function CollegeDashboard() {
     gender_criteria: "Everyone can apply",
   });
 
-  const canCreate = collegeRole === "principal" || collegeRole === "dean" || collegeRole === "staff_coordinator";
-  const canEdit = collegeRole === "principal" || collegeRole === "dean";
-  const canDelete = collegeRole === "principal" || collegeRole === "dean";
-  const canViewReports = collegeRole === "principal" || collegeRole === "dean";
-  const canVerifyUsers = collegeRole === "principal" || collegeRole === "dean" || collegeRole === "staff_coordinator";
+  const rolePermissionDefaults: Record<string, string[]> = {
+    principal: ["create_event", "edit_event", "delete_event", "manage_users", "manage_registrations", "grant_permissions", "full_access"],
+    dean: ["create_event", "edit_event", "delete_event", "manage_users", "manage_registrations", "grant_permissions"],
+    staff_coordinator: ["create_event", "manage_registrations"],
+    student_coordinator: ["manage_registrations"],
+    host: ["manage_registrations"],
+  };
+
+  const getEffectivePermissions = () => {
+    if (!collegeRole) return [];
+    const roleKey = `college:${collegeRole}`;
+    const rolePerms = rolePermissions[roleKey] || rolePermissionDefaults[collegeRole] || [];
+    const userPerms = Array.isArray(profile?.permissions) ? profile?.permissions : [];
+    const merged = new Set([...rolePerms, ...userPerms]);
+    if (merged.has("full_access")) {
+      return [
+        "create_event",
+        "edit_event",
+        "delete_event",
+        "manage_users",
+        "manage_registrations",
+        "grant_permissions",
+        "full_access",
+      ];
+    }
+    return Array.from(merged);
+  };
+
+  const effectivePermissions = getEffectivePermissions();
+  const canCreate = effectivePermissions.includes("create_event");
+  const canEdit = effectivePermissions.includes("edit_event");
+  const canDelete = effectivePermissions.includes("delete_event");
+  const canViewReports = effectivePermissions.includes("manage_users");
+  const canVerifyUsers = effectivePermissions.includes("manage_users");
   const isVerified = profile?.is_verified;
 
   const roleLabel: Record<string, string> = {
@@ -206,8 +237,24 @@ export default function CollegeDashboard() {
       if (canVerifyUsers) {
         fetchCollegeUsers();
       }
+      fetchRolePermissions();
     }
-  }, [user, profile, loading, navigate, isVerified]);
+  }, [user, profile, loading, navigate, isVerified, canVerifyUsers]);
+
+  const fetchRolePermissions = async () => {
+    try {
+      const items = await apiClient.getRolePermissions();
+      const map: Record<string, string[]> = {};
+      (Array.isArray(items) ? items : []).forEach((item) => {
+        if (item?.role_id) {
+          map[item.role_id] = Array.isArray(item.permissions) ? item.permissions : [];
+        }
+      });
+      setRolePermissions(map);
+    } catch (error) {
+      console.error("Error loading role permissions:", error);
+    }
+  };
 
   const fetchEvents = async () => {
     const eventsData = await apiClient.getEvents({ createdBy: user?.id });
@@ -986,6 +1033,22 @@ export default function CollegeDashboard() {
                           <Button variant="ghost" size="icon">
                             <Eye className="h-4 w-4" />
                           </Button>
+                          {effectivePermissions.includes("grant_permissions") && (
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <Button variant="ghost" size="icon">
+                                  <Shield className="h-4 w-4" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent className="max-h-[90vh] overflow-y-auto">
+                                <DialogHeader>
+                                  <DialogTitle>Event Permissions</DialogTitle>
+                                  <DialogDescription>Manage access for this event</DialogDescription>
+                                </DialogHeader>
+                                <EventPermissionsManager eventId={event.id} eventTitle={event.title} />
+                              </DialogContent>
+                            </Dialog>
+                          )}
                           {canEdit && (
                             <Dialog>
                               <DialogTrigger asChild>

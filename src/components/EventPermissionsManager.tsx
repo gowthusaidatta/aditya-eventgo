@@ -47,7 +47,7 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedUser, setSelectedUser] = useState("");
-  const [selectedPermission, setSelectedPermission] = useState<string>("view_registrations");
+  const [selectedPermission, setSelectedPermission] = useState<string>("manage_registrations");
 
   useEffect(() => {
     fetchPermissions();
@@ -158,9 +158,10 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
 
   const getPermissionLabel = (type: string) => {
     switch (type) {
-      case "view_registrations": return "View Registrations";
+      case "manage_registrations": return "Manage Registrations";
       case "edit_event": return "Edit Event";
-      case "manage_event": return "Manage Event";
+      case "delete_event": return "Delete Event";
+      case "grant_permissions": return "Grant Permissions";
       case "full_access": return "Full Access";
       default: return type;
     }
@@ -225,9 +226,10 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="view_registrations">View Registrations</SelectItem>
+                  <SelectItem value="manage_registrations">Manage Registrations</SelectItem>
                   <SelectItem value="edit_event">Edit Event</SelectItem>
-                  <SelectItem value="manage_event">Manage Event</SelectItem>
+                  <SelectItem value="delete_event">Delete Event</SelectItem>
+                  <SelectItem value="grant_permissions">Grant Permissions</SelectItem>
                   <SelectItem value="full_access">Full Access</SelectItem>
                 </SelectContent>
               </Select>
