@@ -1,5 +1,95 @@
 import axios, { AxiosInstance, AxiosConfig } from "axios";
 
+const USERS_DEFAULTS = {
+  full_name: "",
+  email: "",
+  phone: "",
+  avatar_url: "",
+  user_type: "student",
+  college_name: "",
+  graduation_year: 0,
+  roll_number: "",
+  branch: "",
+  college_id: "",
+  is_verified: false,
+  college_role: "",
+  permissions: [],
+};
+
+const EVENTS_DEFAULTS = {
+  title: "",
+  description: "",
+  full_description: "",
+  event_type: "",
+  start_date: "",
+  end_date: "",
+  location: "",
+  max_participants: 0,
+  image_url: "",
+  video_url: "",
+  college_id: "",
+  created_by: "",
+  is_featured: false,
+  mode: "offline",
+  status: "draft",
+  registration_deadline: "",
+  registration_fee: 0,
+  waitlist_enabled: false,
+  waitlist_count: 0,
+  tags: [],
+  venue_details: {},
+  online_link: "",
+  is_hackathon: false,
+  team_size_min: 1,
+  team_size_max: 1,
+  prizes: [],
+  sponsors: [],
+  faqs: [],
+};
+
+const OPPORTUNITIES_DEFAULTS = {
+  title: "",
+  description: "",
+  type: "",
+  company: "",
+  location: "",
+  apply_url: "",
+  stipend: 0,
+  salary: 0,
+  deadline: "",
+  image_url: "",
+  status: "",
+  tags: [],
+  created_by: "",
+};
+
+const REGISTRATIONS_DEFAULTS = {
+  event_id: "",
+  user_id: "",
+  qr_code: "",
+  registration_status: "",
+  registered_at: "",
+  created_at: "",
+  createdAt: "",
+  registrant: {},
+};
+
+function cloneDefault(value: any) {
+  if (Array.isArray(value)) return [...value];
+  if (value && typeof value === "object") return { ...value };
+  return value;
+}
+
+function normalizePayload(payload: any, defaults: Record<string, any>) {
+  const result = { ...(payload || {}) };
+  Object.keys(defaults).forEach((key) => {
+    if (result[key] === null || result[key] === undefined) {
+      result[key] = cloneDefault(defaults[key]);
+    }
+  });
+  return result;
+}
+
 class ApiClient {
   private client: AxiosInstance;
 
@@ -126,7 +216,10 @@ class ApiClient {
 
   async updateUserProfile(userId: string, data: any) {
     try {
-      const response = await this.client.put(`/users/${userId}`, data);
+      const response = await this.client.put(
+        `/users/${userId}`,
+        normalizePayload(data, USERS_DEFAULTS)
+      );
       return response.data;
     } catch (error) {
       console.error("Error updating user profile:", error);
@@ -181,7 +274,10 @@ class ApiClient {
 
   async createEvent(data: any) {
     try {
-      const response = await this.client.post("/events", data);
+      const response = await this.client.post(
+        "/events",
+        normalizePayload(data, EVENTS_DEFAULTS)
+      );
       return response.data;
     } catch (error) {
       console.error("Error creating event:", error);
@@ -191,7 +287,10 @@ class ApiClient {
 
   async updateEvent(eventId: string, data: any) {
     try {
-      const response = await this.client.put(`/events/${eventId}`, data);
+      const response = await this.client.put(
+        `/events/${eventId}`,
+        normalizePayload(data, EVENTS_DEFAULTS)
+      );
       return response.data;
     } catch (error) {
       console.error("Error updating event:", error);
@@ -265,10 +364,10 @@ class ApiClient {
 
   async registerForEvent(eventId: string, payload: any) {
     try {
-      const response = await this.client.post("/registrations", {
-        eventId,
-        ...payload,
-      });
+      const response = await this.client.post(
+        "/registrations",
+        normalizePayload({ eventId, ...payload }, REGISTRATIONS_DEFAULTS)
+      );
       return response.data;
     } catch (error) {
       console.error("Error registering for event:", error);
@@ -288,7 +387,10 @@ class ApiClient {
 
   async updateProfile(data: any) {
     try {
-      const response = await this.client.put("/users/me", data);
+      const response = await this.client.put(
+        "/users/me",
+        normalizePayload(data, USERS_DEFAULTS)
+      );
       return response.data;
     } catch (error) {
       console.error("Error updating profile:", error);
@@ -583,7 +685,10 @@ class ApiClient {
 
   async createOpportunity(data: any) {
     try {
-      const response = await this.client.post("/opportunities", data);
+      const response = await this.client.post(
+        "/opportunities",
+        normalizePayload(data, OPPORTUNITIES_DEFAULTS)
+      );
       return response.data;
     } catch (error) {
       console.error("Error creating opportunity:", error);
@@ -593,7 +698,10 @@ class ApiClient {
 
   async updateOpportunity(oppId: string, data: any) {
     try {
-      const response = await this.client.put(`/opportunities/${oppId}`, data);
+      const response = await this.client.put(
+        `/opportunities/${oppId}`,
+        normalizePayload(data, OPPORTUNITIES_DEFAULTS)
+      );
       return response.data;
     } catch (error) {
       console.error("Error updating opportunity:", error);

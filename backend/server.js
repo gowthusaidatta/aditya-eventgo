@@ -196,6 +196,110 @@ function buildUpdateExpression(item) {
   };
 }
 
+const USERS_DEFAULTS = {
+  full_name: "",
+  email: "",
+  phone: "",
+  avatar_url: "",
+  user_type: "student",
+  college_name: "",
+  graduation_year: 0,
+  roll_number: "",
+  branch: "",
+  college_id: "",
+  is_verified: false,
+  college_role: "",
+  permissions: [],
+};
+
+const EVENTS_DEFAULTS = {
+  title: "",
+  description: "",
+  full_description: "",
+  event_type: "",
+  start_date: "",
+  end_date: "",
+  location: "",
+  max_participants: 0,
+  image_url: "",
+  video_url: "",
+  college_id: "",
+  created_by: "",
+  is_featured: false,
+  mode: "offline",
+  status: "draft",
+  registration_deadline: "",
+  registration_fee: 0,
+  waitlist_enabled: false,
+  waitlist_count: 0,
+  tags: [],
+  venue_details: {},
+  online_link: "",
+  is_hackathon: false,
+  team_size_min: 1,
+  team_size_max: 1,
+  prizes: [],
+  sponsors: [],
+  faqs: [],
+};
+
+const OPPORTUNITIES_DEFAULTS = {
+  title: "",
+  description: "",
+  type: "",
+  company: "",
+  location: "",
+  apply_url: "",
+  stipend: 0,
+  salary: 0,
+  deadline: "",
+  image_url: "",
+  status: "",
+  tags: [],
+  created_by: "",
+};
+
+function cloneDefault(value) {
+  if (Array.isArray(value)) return [...value];
+  if (value && typeof value === "object") return { ...value };
+  return value;
+}
+
+function defaultForType(value) {
+  if (Array.isArray(value)) return [];
+  if (value && typeof value === "object") return {};
+  if (typeof value === "number") return 0;
+  if (typeof value === "boolean") return false;
+  return "";
+}
+
+function applyDefaults({ incoming, defaults, existing, omitFields = [] }) {
+  const merged = {
+    ...(existing || {}),
+    ...(incoming || {}),
+  };
+
+  const result = { ...merged };
+  const omit = new Set(omitFields);
+  const fields = new Set([...(defaults ? Object.keys(defaults) : []), ...Object.keys(merged)]);
+
+  fields.forEach((field) => {
+    if (omit.has(field)) return;
+    const value = result[field];
+    if (value === null || value === undefined) {
+      if (defaults && Object.prototype.hasOwnProperty.call(defaults, field)) {
+        result[field] = cloneDefault(defaults[field]);
+      } else if (existing && existing[field] !== null && existing[field] !== undefined) {
+        result[field] = defaultForType(existing[field]);
+      } else {
+        result[field] = "";
+      }
+    }
+  });
+
+  return result;
+}
+
 async function updateUserWithFallbackKey({ userId, update }) {
   try {
     return await ddb.send(
@@ -218,6 +322,28 @@ async function updateUserWithFallbackKey({ userId, update }) {
       Key: { user_id: userId },
       ...update,
       ReturnValues: "ALL_NEW",
+    })
+  );
+}
+
+async function getUserWithFallbackKey(userId) {
+  try {
+    return await ddb.send(
+      new GetCommand({
+        TableName: USERS_TABLE,
+        Key: { userId },
+      })
+    );
+  } catch (error) {
+    if (!isDynamoKeySchemaError(error)) {
+      throw error;
+    }
+  }
+
+  return await ddb.send(
+    new GetCommand({
+      TableName: USERS_TABLE,
+      Key: { user_id: userId },
     })
   );
 }
@@ -584,8 +710,13 @@ app.post("/events", requireAuth, async (req, res) => {
     const eventId = req.body.eventId || `evt_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
+    const normalized = applyDefaults({
+      incoming: req.body,
+      defaults: EVENTS_DEFAULTS,
+    });
+
     const item = {
-      ...req.body,
+      ...normalized,
       eventId,
       createdAt: req.body.createdAt || now,
       updatedAt: now,
@@ -612,12 +743,36 @@ app.put("/events/:eventId", requireAuth, async (req, res) => {
       return;
     }
 
-    const updateFields = { ...req.body, updatedAt: new Date().toISOString() };
+    const now = new Date().toISOString();
+    const existing = await ddb.send(
+      new GetCommand({
+        TableName: EVENTS_TABLE,
+        Key: { eventId: req.params.eventId },
+      })
+    );
+
+    const normalized = applyDefaults({
+      incoming: req.body,
+      defaults: EVENTS_DEFAULTS,
+      existing: existing.Item,
+      omitFields: ["eventId", "createdAt", "created_at", "updatedAt", "updated_at"],
+    });
+
+    const updateFields = {
+      ...normalized,
+      updatedAt: now,
+    };
+
     const update = buildUpdateExpression(updateFields);
     if (!update) {
       res.status(400).json({ message: "No fields to update" });
       return;
     }
+
+    update.UpdateExpression = `${update.UpdateExpression}, #createdAt = if_not_exists(#createdAt, :createdAt)`;
+    update.ExpressionAttributeNames["#createdAt"] = "createdAt";
+    update.ExpressionAttributeValues[":createdAt"] =
+      existing.Item?.createdAt || existing.Item?.created_at || now;
 
     const data = await ddb.send(
       new UpdateCommand({
@@ -684,8 +839,13 @@ app.post("/opportunities", requireAuth, async (req, res) => {
     const oppId = req.body.oppId || `opp_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
+    const normalized = applyDefaults({
+      incoming: req.body,
+      defaults: OPPORTUNITIES_DEFAULTS,
+    });
+
     const item = {
-      ...req.body,
+      ...normalized,
       oppId,
       createdAt: req.body.createdAt || now,
       updatedAt: now,
@@ -706,12 +866,32 @@ app.post("/opportunities", requireAuth, async (req, res) => {
 
 app.put("/opportunities/:oppId", requireAuth, async (req, res) => {
   try {
-    const updateFields = { ...req.body, updatedAt: new Date().toISOString() };
+    const now = new Date().toISOString();
+    const existing = await ddb.send(
+      new GetCommand({
+        TableName: OPPORTUNITIES_TABLE,
+        Key: { oppId: req.params.oppId },
+      })
+    );
+
+    const normalized = applyDefaults({
+      incoming: req.body,
+      defaults: OPPORTUNITIES_DEFAULTS,
+      existing: existing.Item,
+      omitFields: ["oppId", "createdAt", "created_at", "updatedAt", "updated_at"],
+    });
+
+    const updateFields = { ...normalized, updatedAt: now };
     const update = buildUpdateExpression(updateFields);
     if (!update) {
       res.status(400).json({ message: "No fields to update" });
       return;
     }
+
+    update.UpdateExpression = `${update.UpdateExpression}, #createdAt = if_not_exists(#createdAt, :createdAt)`;
+    update.ExpressionAttributeNames["#createdAt"] = "createdAt";
+    update.ExpressionAttributeValues[":createdAt"] =
+      existing.Item?.createdAt || existing.Item?.created_at || now;
 
     const data = await ddb.send(
       new UpdateCommand({
@@ -867,14 +1047,28 @@ app.get("/users", requireAuth, async (req, res) => {
 
 app.put("/users/:userId", requireAuth, async (req, res) => {
   try {
+    const now = new Date().toISOString();
+    const existing = await getUserWithFallbackKey(req.params.userId);
+    const normalized = applyDefaults({
+      incoming: req.body,
+      defaults: USERS_DEFAULTS,
+      existing: existing.Item,
+      omitFields: ["userId", "user_id", "createdAt", "created_at", "updatedAt", "updated_at"],
+    });
+
     const update = buildUpdateExpression({
-      ...req.body,
-      updatedAt: new Date().toISOString(),
+      ...normalized,
+      updatedAt: now,
     });
     if (!update) {
       res.status(400).json({ message: "No fields to update" });
       return;
     }
+
+    update.UpdateExpression = `${update.UpdateExpression}, #createdAt = if_not_exists(#createdAt, :createdAt)`;
+    update.ExpressionAttributeNames["#createdAt"] = "createdAt";
+    update.ExpressionAttributeValues[":createdAt"] =
+      existing.Item?.createdAt || existing.Item?.created_at || now;
 
     const data = await updateUserWithFallbackKey({
       userId: req.params.userId,
@@ -922,8 +1116,16 @@ app.put("/users/me", requireAuth, async (req, res) => {
     delete updatePayload.userId;
     delete updatePayload.user_id;
 
+    const existing = await getUserWithFallbackKey(userId);
+    const normalized = applyDefaults({
+      incoming: updatePayload,
+      defaults: USERS_DEFAULTS,
+      existing: existing.Item,
+      omitFields: ["userId", "user_id", "createdAt", "created_at", "updatedAt", "updated_at"],
+    });
+
     const updateFields = {
-      ...updatePayload,
+      ...normalized,
       updatedAt: now,
     };
 
@@ -942,7 +1144,8 @@ app.put("/users/me", requireAuth, async (req, res) => {
 
     update.UpdateExpression = `${update.UpdateExpression}, #createdAt = if_not_exists(#createdAt, :createdAt)`;
     update.ExpressionAttributeNames["#createdAt"] = "createdAt";
-    update.ExpressionAttributeValues[":createdAt"] = req.body?.createdAt || now;
+    update.ExpressionAttributeValues[":createdAt"] =
+      existing.Item?.createdAt || existing.Item?.created_at || req.body?.createdAt || now;
 
     const data = await updateUserWithFallbackKey({ userId, update });
     res.json(data.Attributes || {});
