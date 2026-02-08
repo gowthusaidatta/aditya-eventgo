@@ -52,6 +52,7 @@ export default function CreateEvent() {
   // Basic Info
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [fullDescription, setFullDescription] = useState("");
   const [eventType, setEventType] = useState("workshop");
   const [isHackathon, setIsHackathon] = useState(false);
   const [mode, setMode] = useState<"online" | "offline" | "hybrid">("offline");
@@ -153,6 +154,7 @@ export default function CreateEvent() {
       const event = await apiClient.createEvent({
         title,
         description,
+        full_description: fullDescription,
         event_type: eventType,
         is_hackathon: isHackathon,
         mode,
@@ -285,6 +287,17 @@ export default function CreateEvent() {
                     onChange={(e) => setDescription(e.target.value)}
                     placeholder="Describe your event..."
                     rows={4}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="full-description">Full Description</Label>
+                  <Textarea
+                    id="full-description"
+                    value={fullDescription}
+                    onChange={(e) => setFullDescription(e.target.value)}
+                    placeholder="Add complete event details, rules, agenda, and FAQs..."
+                    rows={8}
                   />
                 </div>
 

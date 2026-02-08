@@ -16,6 +16,7 @@ interface Event {
   eventId: string;
   title: string;
   description: string | null;
+  full_description?: string | null;
   event_type?: string;
   category?: string;
   startDate?: string;
@@ -65,7 +66,7 @@ export default function Events() {
   useEffect(() => {
     const registerId = searchParams.get("register");
     if (registerId && events.length > 0) {
-      const eventToRegister = events.find(e => e.id === registerId);
+      const eventToRegister = events.find(e => e.eventId === registerId);
       if (eventToRegister) {
         setSelectedEvent(eventToRegister);
         setIsDialogOpen(true);
@@ -114,7 +115,8 @@ export default function Events() {
 
   const filteredEvents = events.filter((event) => {
     const matchesSearch = event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      event.description?.toLowerCase().includes(searchQuery.toLowerCase());
+      event.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      event.full_description?.toLowerCase().includes(searchQuery.toLowerCase());
     const typeValue = event.event_type || event.category || "";
     const matchesType = typeFilter === "all" || typeValue === typeFilter;
     return matchesSearch && matchesType;

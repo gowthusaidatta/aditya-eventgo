@@ -29,6 +29,7 @@ interface EventDetail {
   eventId: string;
   title: string;
   description: string | null;
+  full_description?: string | null;
   event_type?: string;
   category?: string;
   startDate?: string;
@@ -108,7 +109,11 @@ export default function EventDetail() {
 
     try {
       const eventData = await apiClient.getEvent(eventId);
-      setEvent(eventData);
+      const normalizedEvent = {
+        ...eventData,
+        eventId: eventData?.eventId || eventData?.id || eventId,
+      };
+      setEvent(normalizedEvent);
 
       setOrganizerName(eventData?.organizer?.name || null);
       setSchedule(eventData?.schedule || []);
@@ -122,6 +127,33 @@ export default function EventDetail() {
       }
     } catch (error) {
       console.error("Error fetching event:", error);
+      try {
+        const allEvents = await apiClient.getEvents();
+        const fallbackEvent = (Array.isArray(allEvents) ? allEvents : []).find(
+          (item) => (item?.eventId || item?.id) === eventId
+        );
+        if (fallbackEvent) {
+          const normalizedEvent = {
+            ...fallbackEvent,
+            eventId: fallbackEvent?.eventId || fallbackEvent?.id || eventId,
+          };
+          setEvent(normalizedEvent);
+          setOrganizerName(null);
+          setSchedule([]);
+
+          const countData = await apiClient.getRegistrationCount(eventId);
+          setRegistrationCount(countData?.count || 0);
+
+          if (user) {
+            const regData = await apiClient.getRegistrations(eventId);
+            setIsRegistered(Array.isArray(regData) && regData.length > 0);
+          }
+          setLoading(false);
+          return;
+        }
+      } catch (fallbackError) {
+        console.error("Fallback event lookup failed:", fallbackError);
+      }
       toast({
         title: "Error",
         description: "Failed to load event details",
@@ -260,6 +292,19 @@ export default function EventDetail() {
                 </div>
               </CardContent>
             </Card>
+
+            {event.full_description && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Full Description</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                    {event.full_description}
+                  </p>
+                </CardContent>
+              </Card>
+            )}
 
             <Card>
               <CardHeader>

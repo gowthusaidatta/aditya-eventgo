@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar, Users, BarChart3, PlusCircle, Eye, Edit, Trash2, UserCheck, UserX, AlertCircle, Share2 } from "lucide-react";
@@ -21,6 +22,7 @@ interface Event {
   id: string;
   title: string;
   description: string | null;
+  full_description?: string | null;
   event_type: string;
   start_date: string;
   end_date: string | null;
@@ -59,6 +61,7 @@ export default function CollegeDashboard() {
   const [newEvent, setNewEvent] = useState({
     title: "",
     description: "",
+    full_description: "",
     event_type: "workshop",
     start_date: "",
     end_date: "",
@@ -203,6 +206,7 @@ export default function CollegeDashboard() {
       await apiClient.createEvent({
         title: newEvent.title,
         description: newEvent.description,
+        full_description: newEvent.full_description,
         event_type: newEvent.event_type,
         start_date: newEvent.start_date,
         end_date: newEvent.end_date || null,
@@ -229,6 +233,7 @@ export default function CollegeDashboard() {
     setNewEvent({
       title: "",
       description: "",
+      full_description: "",
       event_type: "workshop",
       start_date: "",
       end_date: "",
@@ -247,6 +252,7 @@ export default function CollegeDashboard() {
       await apiClient.updateEvent(editingEvent.id, {
         title: editingEvent.title,
         description: editingEvent.description,
+        full_description: editingEvent.full_description,
         event_type: editingEvent.event_type,
         start_date: editingEvent.start_date,
         end_date: editingEvent.end_date,
@@ -369,6 +375,15 @@ export default function CollegeDashboard() {
                       value={newEvent.description}
                       onChange={(e) => setNewEvent({ ...newEvent, description: e.target.value })}
                       placeholder="Event description"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Full Description</Label>
+                    <Textarea
+                      value={newEvent.full_description}
+                      onChange={(e) => setNewEvent({ ...newEvent, full_description: e.target.value })}
+                      placeholder="Complete event details"
+                      rows={4}
                     />
                   </div>
                   <div className="grid gap-2">
@@ -569,6 +584,14 @@ export default function CollegeDashboard() {
                                     <Input
                                       value={editingEvent.description || ""}
                                       onChange={(e) => setEditingEvent({ ...editingEvent, description: e.target.value })}
+                                    />
+                                  </div>
+                                  <div className="grid gap-2">
+                                    <Label>Full Description</Label>
+                                    <Textarea
+                                      value={editingEvent.full_description || ""}
+                                      onChange={(e) => setEditingEvent({ ...editingEvent, full_description: e.target.value })}
+                                      rows={4}
                                     />
                                   </div>
                                   <div className="grid gap-2">
