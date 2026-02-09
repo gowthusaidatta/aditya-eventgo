@@ -11,8 +11,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import eventgoLogo from "@/assets/eventgo-logo.png";
-import adityaLogo from "@/assets/aditya-university-logo.jpg";
+const eventgoLogo = "/assets/logos/eventgo-logo.webp";
+const adityaLogo = "/assets/logos/aditya-university-logo.webp";
 
 export function Header() {
   const { user, profile } = useAuth();

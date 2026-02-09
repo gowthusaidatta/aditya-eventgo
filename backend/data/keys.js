@@ -14,6 +14,7 @@ const eventRegSk = (userId) => `REG#USER#${userId}`;
 const eventTeamSk = (teamId) => prefix("TEAM", teamId);
 const teamMemberSk = (userId) => prefix("MEMBER", userId);
 const eventCertSk = (certId) => prefix("CERT", certId);
+const permissionSk = (scope) => `PERMISSION#${scope}`;
 const auditSk = (timestamp, id) => `AUDIT#${timestamp}#${id}`;
 
 const gsi1Pk = (userId) => userPk(userId);
@@ -42,6 +43,7 @@ module.exports = {
   eventTeamSk,
   teamMemberSk,
   eventCertSk,
+  permissionSk,
   auditSk,
   gsi1Pk,
   gsi1SkEvent,

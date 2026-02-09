@@ -12,6 +12,7 @@ const {
   eventTeamSk,
   teamMemberSk,
   eventCertSk,
+  permissionSk,
   auditSk,
   gsi1Pk,
   gsi1SkEvent,
@@ -101,6 +102,14 @@ const buildCertificateItem = (eventId, certId, attributes = {}) => ({
   ...attributes,
 });
 
+const buildPermissionItem = (userId, scope, attributes = {}) => ({
+  PK: userPk(userId),
+  SK: permissionSk(scope),
+  type: "permission",
+  scope,
+  ...attributes,
+});
+
 const buildAuditItem = (tenantId, timestamp, id, attributes = {}) => ({
   PK: tenantPk(tenantId),
   SK: auditSk(timestamp, id),
@@ -118,5 +127,6 @@ module.exports = {
   buildTeamItem,
   buildTeamMemberItem,
   buildCertificateItem,
+  buildPermissionItem,
   buildAuditItem,
 };

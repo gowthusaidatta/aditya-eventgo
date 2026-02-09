@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useCognitoAuth } from "@/contexts/CognitoAuthContext";
 import { ArrowLeft, ShieldCheck } from "lucide-react";
-import eventgoLogo from "@/assets/eventgo-logo.png";
+const eventgoLogo = "/assets/logos/eventgo-logo.webp";
 
 export default function ForgotPassword() {
   const { startPasswordReset, confirmPasswordReset } = useCognitoAuth();

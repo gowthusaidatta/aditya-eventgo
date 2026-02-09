@@ -43,6 +43,15 @@ This document defines the production single-table data model for EventGo.
 - completion_percent
 - verification_status, user_status
 
+### Permission
+- PK: USER#<userId>
+- SK: PERMISSION#<scope>
+- type: permission
+- scope (GLOBAL | TENANT#<tenantId> | EVENT#<eventId>)
+- role
+- allowedActions[]
+- grantedBy, grantedAt
+
 ### Event
 - PK: TENANT#<tenantId>
 - SK: EVENT#<eventId>
@@ -133,7 +142,51 @@ This document defines the production single-table data model for EventGo.
 7) List users by role
 - GSI4PK = TENANT#<tenantId>#ROLE#<role>
 
+8) Resolve authorization context
+- PK = USER#<userId>
+- SK begins_with PERMISSION#
+
 ## Notes
 - Avoid scans in production. Use GSIs and targeted PK/SK queries.
 - Event config is versioned for auditability and safe edits after publish.
 - All timestamps are ISO 8601 strings.
+
+## Authorization Migration (2026-02)
+### Summary
+EventGo uses a centralized authorization system backed by permission items in the main table.
+Every user must have a tenant-scoped permission item or requests will fail closed.
+
+### Backfill Procedure
+Run the one-time backfill script to create missing permission items for existing users.
+
+```bash
+node backend/scripts/backfill-permissions.js
+```
+
+Optional scoped run:
+
+```bash
+node backend/scripts/backfill-permissions.js --tenants=tenant_a,tenant_b
+```
+
+The script:
+- Iterates tenant memberships.
+- Creates PERMISSION#TENANT#<tenantId> items if missing.
+- Derives role and allowedActions from the user profile or tenant membership.
+- Uses conditional writes and is safe to re-run.
+
+### Verification
+Use the admin health endpoint to confirm coverage:
+
+```http
+GET /admin/permissions/health
+```
+
+Expected response:
+- totalUsers
+- missingPermissions
+- missingUsers[]
+
+### Rollback Notes
+Rollback requires deploying the previous backend version and re-enabling any legacy permission reads.
+Do not delete permission items; they are safe to keep if you roll back.

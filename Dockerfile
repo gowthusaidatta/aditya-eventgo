@@ -49,7 +49,8 @@ RUN apk add --no-cache curl
 COPY nginx.conf /etc/nginx/nginx.conf
 
 # Copy built application from builder
-COPY --from=builder /app/dist /usr/share/nginx/html
+RUN mkdir -p /var/www/frontend
+COPY --from=builder /app/dist /var/www/frontend
 
 # Create non-root user
 RUN addgroup -g 1001 -S nginx && \

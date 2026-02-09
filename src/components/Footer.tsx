@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
-import eventgoLogo from "@/assets/eventgo-logo.png";
-import adityaLogo from "@/assets/aditya-university-logo.jpg";
+const eventgoLogo = "/assets/logos/eventgo-logo.webp";
+const adityaLogo = "/assets/logos/aditya-university-logo.webp";
 
 export function Footer() {
   return (

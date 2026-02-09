@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { useCognitoAuth } from "@/contexts/CognitoAuthContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { Shield } from "lucide-react";
-import eventgoLogo from "@/assets/eventgo-logo.png";
+const eventgoLogo = "/assets/logos/eventgo-logo.webp";
 
 export default function AdminLogin() {
   const { loginWithPassword } = useCognitoAuth();

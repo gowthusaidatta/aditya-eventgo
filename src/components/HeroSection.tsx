@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useNavigate } from "react-router-dom";
 import { Search, Calendar, Code2 } from "lucide-react";
-import eventgoLogo from "@/assets/eventgo-logo.png";
+const eventgoLogo = "/assets/logos/eventgo-logo.webp";
 
 const stats = [
   { value: "500+", label: "Events" },
