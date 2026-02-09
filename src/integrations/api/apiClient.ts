@@ -19,6 +19,7 @@ const USERS_DEFAULTS = {
 const EVENTS_DEFAULTS = {
   title: "",
   description: "",
+  short_description: "",
   full_description: "",
   event_type: "",
   start_date: "",
@@ -32,16 +33,20 @@ const EVENTS_DEFAULTS = {
   is_featured: false,
   mode: "offline",
   status: "draft",
+  participation_type: "individual",
+  difficulty_level: "Beginner",
   registration_deadline: "",
   registration_fee: 0,
   waitlist_enabled: false,
   waitlist_count: 0,
   tags: [],
+  skills: [],
   venue_details: {},
   online_link: "",
   is_hackathon: false,
   team_size_min: 1,
   team_size_max: 1,
+  event_config: {},
   prizes: [],
   sponsors: [],
   faqs: [],
@@ -268,6 +273,16 @@ class ApiClient {
       return response.data;
     } catch (error) {
       console.error("Error fetching event:", error);
+      throw error;
+    }
+  }
+
+  async getEventSchema(eventId: string) {
+    try {
+      const response = await this.client.get(`/events/${eventId}/schema`);
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching event schema:", error);
       throw error;
     }
   }
@@ -719,12 +734,13 @@ class ApiClient {
   }
 
   // Generic request method for custom endpoints
-  async request(method: string, url: string, data?: any) {
+  async request(method: string, url: string, data?: any, config?: AxiosConfig) {
     try {
       const response = await this.client.request({
         method,
         url,
         data,
+        ...(config || {}),
       });
       return response.data;
     } catch (error) {

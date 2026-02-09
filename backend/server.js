@@ -27,6 +27,7 @@ const {
 } = require("@aws-sdk/client-cognito-identity-provider");
 const { createRemoteJWKSet, jwtVerify } = require("jose");
 const { validateEventPayload } = require("./validation");
+const { getRegistrationSchema, validateRegistrationFormData } = require("./eventSchemas");
 
 const app = express();
 
@@ -48,6 +49,7 @@ const {
   NOTIFICATIONS_TABLE,
   CERTIFICATES_TABLE,
   EVENT_PERMISSIONS_TABLE,
+  PERMISSIONS_TABLE,
   S3_BUCKET_NAME,
   S3_PUBLIC_BASE_URL,
   COGNITO_REGION,
@@ -87,6 +89,8 @@ const s3Client = new S3Client({ region: AWS_REGION });
 const cognitoClient = COGNITO_REGION
   ? new CognitoIdentityProviderClient({ region: COGNITO_REGION })
   : null;
+
+const permissionsTable = PERMISSIONS_TABLE || ROLES_TABLE || EVENT_PERMISSIONS_TABLE;
 
 const issuer = COGNITO_REGION && COGNITO_USER_POOL_ID
   ? `https://cognito-idp.${COGNITO_REGION}.amazonaws.com/${COGNITO_USER_POOL_ID}`
@@ -196,6 +200,24 @@ function buildUpdateExpression(item) {
   };
 }
 
+function normalizeEmail(value) {
+  if (!value || typeof value !== "string") return null;
+  const trimmed = value.trim().toLowerCase();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+async function resolveEmailByUserId(userId) {
+  if (!userId) return null;
+  if (!USERS_TABLE) return null;
+  try {
+    const data = await getUserWithFallbackKey(userId);
+    const email = normalizeEmail(data.Item?.email);
+    return email;
+  } catch (error) {
+    return null;
+  }
+}
+
 const USERS_DEFAULTS = {
   full_name: "",
   email: "",
@@ -215,6 +237,7 @@ const USERS_DEFAULTS = {
 const EVENTS_DEFAULTS = {
   title: "",
   description: "",
+  short_description: "",
   full_description: "",
   event_type: "",
   start_date: "",
@@ -228,16 +251,20 @@ const EVENTS_DEFAULTS = {
   is_featured: false,
   mode: "offline",
   status: "draft",
+  participation_type: "individual",
+  difficulty_level: "Beginner",
   registration_deadline: "",
   registration_fee: 0,
   waitlist_enabled: false,
   waitlist_count: 0,
   tags: [],
+  skills: [],
   venue_details: {},
   online_link: "",
   is_hackathon: false,
   team_size_min: 1,
   team_size_max: 1,
+  event_config: {},
   prizes: [],
   sponsors: [],
   faqs: [],
@@ -699,6 +726,28 @@ app.get("/events/:eventId", async (req, res) => {
   }
 });
 
+app.get("/events/:eventId/schema", async (req, res) => {
+  try {
+    const data = await ddb.send(
+      new GetCommand({
+        TableName: EVENTS_TABLE,
+        Key: { eventId: req.params.eventId },
+      })
+    );
+    if (!data.Item) {
+      res.status(404).json({ message: "Event not found" });
+      return;
+    }
+
+    res.json({
+      event: data.Item,
+      registration_schema: getRegistrationSchema(data.Item),
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch event schema" });
+  }
+});
+
 app.post("/events", requireAuth, async (req, res) => {
   try {
     const errors = validateEventPayload(req.body || {});
@@ -936,6 +985,28 @@ app.get("/users/me", requireAuth, async (req, res) => {
     const now = new Date().toISOString();
     const isSuperAdmin = isSuperAdminEmail(req.user.email);
 
+    if (permissionsTable && req.user?.email) {
+      try {
+        const permData = await ddb.send(
+          new QueryCommand({
+            TableName: permissionsTable,
+            KeyConditionExpression: "subject_id = :subject_id",
+            ExpressionAttributeValues: {
+              ":subject_id": normalizeEmail(req.user.email),
+            },
+          })
+        );
+        const permissions = (permData.Items || [])
+          .filter((item) => item.is_active !== false)
+          .filter((item) => !item.scope || item.scope === "platform")
+          .map((item) => item.permission_type)
+          .filter(Boolean);
+        existing.permissions = [...new Set(permissions)];
+      } catch (error) {
+        console.error("Failed to load permissions:", error?.name, error?.message);
+      }
+    }
+
     if (isSuperAdmin) {
       const updateFields = {
         user_type: "admin",
@@ -1164,6 +1235,25 @@ app.post("/registrations", requireAuth, async (req, res) => {
       return;
     }
 
+    const eventData = await ddb.send(
+      new GetCommand({
+        TableName: EVENTS_TABLE,
+        Key: { eventId },
+      })
+    );
+    if (!eventData.Item) {
+      res.status(404).json({ message: "Event not found" });
+      return;
+    }
+
+    if (eventData.Item.registration_deadline) {
+      const deadline = new Date(eventData.Item.registration_deadline);
+      if (!Number.isNaN(deadline.getTime()) && deadline < new Date()) {
+        res.status(400).json({ message: "Registration deadline has passed" });
+        return;
+      }
+    }
+
     let registrantProfile = null;
     if (USERS_TABLE) {
       const existingProfile = await ddb.send(
@@ -1196,8 +1286,76 @@ app.post("/registrations", requireAuth, async (req, res) => {
       }
     }
 
+    const formData = req.body?.form_data && typeof req.body.form_data === "object"
+      ? req.body.form_data
+      : {
+          full_name: req.body.full_name,
+          roll_number: req.body.roll_number,
+          college_name: req.body.college_name,
+          branch: req.body.branch,
+          email: req.body.email,
+          phone: req.body.phone,
+        };
+
+    const validationErrors = validateRegistrationFormData(eventData.Item, formData);
+    if (validationErrors.length > 0) {
+      res.status(400).json({ message: "Validation failed", errors: validationErrors });
+      return;
+    }
+
+    const participationType = eventData.Item.participation_type
+      || (eventData.Item.team_size_max && eventData.Item.team_size_max > 1 ? "team" : "individual");
+    if (participationType === "team") {
+      const teamName = String(formData.team_name || "").trim();
+      if (!teamName) {
+        res.status(400).json({ message: "Validation failed", errors: ["Team Name is required"] });
+        return;
+      }
+
+      const membersRaw = formData.team_members;
+      let members = [];
+      if (Array.isArray(membersRaw)) {
+        members = membersRaw.map((value) => String(value).trim()).filter(Boolean);
+      } else if (membersRaw) {
+        members = String(membersRaw)
+          .split(/[\n,]+/)
+          .map((value) => value.trim())
+          .filter(Boolean);
+      }
+
+      const minSize = Number(eventData.Item.team_size_min || 1);
+      const maxSize = Number(eventData.Item.team_size_max || Math.max(minSize, 1));
+      const totalMembers = 1 + members.length;
+
+      if (Number.isFinite(minSize) && totalMembers < minSize) {
+        res.status(400).json({
+          message: "Validation failed",
+          errors: [`Team must have at least ${minSize} members`],
+        });
+        return;
+      }
+
+      if (Number.isFinite(maxSize) && totalMembers > maxSize) {
+        res.status(400).json({
+          message: "Validation failed",
+          errors: [`Team must have at most ${maxSize} members`],
+        });
+        return;
+      }
+
+      const invalidEmails = members.filter(
+        (entry) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(entry)
+      );
+      if (invalidEmails.length > 0) {
+        res.status(400).json({
+          message: "Validation failed",
+          errors: ["Team member emails are invalid"],
+        });
+        return;
+      }
+    }
+
     const item = {
-      ...req.body,
       event_id: eventId,
       user_id: userId,
       qr_code: req.body.qr_code || generateQrCode(),
@@ -1205,6 +1363,8 @@ app.post("/registrations", requireAuth, async (req, res) => {
       registered_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
       createdAt: new Date().toISOString(),
+      form_data: formData,
+      team_data: req.body?.team_data || null,
       registrant: registrantProfile
         ? {
             full_name: registrantProfile.full_name || null,
@@ -1554,17 +1714,18 @@ app.get("/roles/platform", requireAuth, async (req, res) => {
 
 app.get("/permissions/roles", requireAuth, async (req, res) => {
   try {
-    if (!ROLES_TABLE) {
-      res.status(500).json({ message: "ROLES_TABLE is not configured" });
+    if (!permissionsTable) {
+      res.status(500).json({ message: "PERMISSIONS_TABLE is not configured" });
       return;
     }
 
     const data = await ddb.send(
       new ScanCommand({
-        TableName: ROLES_TABLE,
-        FilterExpression: "role_type = :role_type",
+        TableName: permissionsTable,
+        FilterExpression: "subject_type = :subject_type AND permission_id = :permission_id",
         ExpressionAttributeValues: {
-          ":role_type": "college_role_permissions",
+          ":subject_type": "role",
+          ":permission_id": "role_permissions",
         },
       })
     );
@@ -1577,8 +1738,8 @@ app.get("/permissions/roles", requireAuth, async (req, res) => {
 
 app.put("/permissions/roles/:roleId", requireAuth, async (req, res) => {
   try {
-    if (!ROLES_TABLE) {
-      res.status(500).json({ message: "ROLES_TABLE is not configured" });
+    if (!permissionsTable) {
+      res.status(500).json({ message: "PERMISSIONS_TABLE is not configured" });
       return;
     }
 
@@ -1590,6 +1751,10 @@ app.put("/permissions/roles/:roleId", requireAuth, async (req, res) => {
 
     const now = new Date().toISOString();
     const item = {
+      subject_id: req.params.roleId,
+      subject_type: "role",
+      permission_id: "role_permissions",
+      scope: "platform",
       role_id: req.params.roleId,
       role_type: "college_role_permissions",
       permissions,
@@ -1600,7 +1765,7 @@ app.put("/permissions/roles/:roleId", requireAuth, async (req, res) => {
 
     await ddb.send(
       new PutCommand({
-        TableName: ROLES_TABLE,
+        TableName: permissionsTable,
         Item: item,
       })
     );
@@ -1613,16 +1778,19 @@ app.put("/permissions/roles/:roleId", requireAuth, async (req, res) => {
 
 app.get("/events/:eventId/permissions", requireAuth, async (req, res) => {
   try {
-    if (!EVENT_PERMISSIONS_TABLE) {
-      res.status(500).json({ message: "EVENT_PERMISSIONS_TABLE is not configured" });
+    if (!permissionsTable) {
+      res.status(500).json({ message: "PERMISSIONS_TABLE is not configured" });
       return;
     }
 
     const data = await ddb.send(
-      new QueryCommand({
-        TableName: EVENT_PERMISSIONS_TABLE,
-        KeyConditionExpression: "event_id = :event_id",
-        ExpressionAttributeValues: { ":event_id": req.params.eventId },
+      new ScanCommand({
+        TableName: permissionsTable,
+        FilterExpression: "subject_type = :subject_type AND event_id = :event_id",
+        ExpressionAttributeValues: {
+          ":subject_type": "user",
+          ":event_id": req.params.eventId,
+        },
       })
     );
 
@@ -1635,25 +1803,31 @@ app.get("/events/:eventId/permissions", requireAuth, async (req, res) => {
 
 app.post("/events/:eventId/permissions", requireAuth, async (req, res) => {
   try {
-    if (!EVENT_PERMISSIONS_TABLE) {
-      res.status(500).json({ message: "EVENT_PERMISSIONS_TABLE is not configured" });
+    if (!permissionsTable) {
+      res.status(500).json({ message: "PERMISSIONS_TABLE is not configured" });
       return;
     }
 
-    const { user_id, permission_type } = req.body;
-    if (!user_id || !permission_type) {
-      res.status(400).json({ message: "user_id and permission_type are required" });
+    const { user_id, email, permission_type } = req.body;
+    if (!permission_type) {
+      res.status(400).json({ message: "permission_type is required" });
+      return;
+    }
+
+    const resolvedEmail = normalizeEmail(email) || (await resolveEmailByUserId(user_id));
+    if (!resolvedEmail) {
+      res.status(400).json({ message: "email is required" });
       return;
     }
 
     const existing = await ddb.send(
-      new QueryCommand({
-        TableName: EVENT_PERMISSIONS_TABLE,
-        KeyConditionExpression: "event_id = :event_id",
-        FilterExpression: "user_id = :user_id AND permission_type = :permission_type AND is_active = :is_active",
+      new ScanCommand({
+        TableName: permissionsTable,
+        FilterExpression: "subject_type = :subject_type AND subject_id = :subject_id AND event_id = :event_id AND permission_type = :permission_type AND is_active = :is_active",
         ExpressionAttributeValues: {
+          ":subject_type": "user",
+          ":subject_id": resolvedEmail,
           ":event_id": req.params.eventId,
-          ":user_id": user_id,
           ":permission_type": permission_type,
           ":is_active": true,
         },
@@ -1667,18 +1841,20 @@ app.post("/events/:eventId/permissions", requireAuth, async (req, res) => {
 
     const permissionId = req.body.permission_id || `perm_${crypto.randomUUID()}`;
     const item = {
+      subject_id: resolvedEmail,
+      subject_type: "user",
       event_id: req.params.eventId,
       permission_id: permissionId,
-      user_id,
       permission_type,
       granted_by: req.user.sub,
       granted_at: new Date().toISOString(),
       is_active: true,
+      scope: "event",
     };
 
     await ddb.send(
       new PutCommand({
-        TableName: EVENT_PERMISSIONS_TABLE,
+        TableName: permissionsTable,
         Item: item,
       })
     );
@@ -1691,8 +1867,14 @@ app.post("/events/:eventId/permissions", requireAuth, async (req, res) => {
 
 app.delete("/events/:eventId/permissions/:permissionId", requireAuth, async (req, res) => {
   try {
-    if (!EVENT_PERMISSIONS_TABLE) {
-      res.status(500).json({ message: "EVENT_PERMISSIONS_TABLE is not configured" });
+    if (!permissionsTable) {
+      res.status(500).json({ message: "PERMISSIONS_TABLE is not configured" });
+      return;
+    }
+
+    const email = normalizeEmail(req.query?.email);
+    if (!email) {
+      res.status(400).json({ message: "email query param is required" });
       return;
     }
 
@@ -1704,8 +1886,8 @@ app.delete("/events/:eventId/permissions/:permissionId", requireAuth, async (req
 
     await ddb.send(
       new UpdateCommand({
-        TableName: EVENT_PERMISSIONS_TABLE,
-        Key: { event_id: req.params.eventId, permission_id: req.params.permissionId },
+        TableName: permissionsTable,
+        Key: { subject_id: email, permission_id: req.params.permissionId },
         ...update,
       })
     );

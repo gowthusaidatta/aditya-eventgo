@@ -14,7 +14,7 @@ import { Plus, Trash2, Users, Shield, Search } from "lucide-react";
 interface EventPermission {
   id?: string;
   permission_id?: string;
-  user_id: string;
+  subject_id?: string;
   permission_type: string;
   granted_by: string;
   granted_at: string;
@@ -46,7 +46,7 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
   const [collegeUsers, setCollegeUsers] = useState<CollegeUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedUser, setSelectedUser] = useState("");
+  const [selectedEmail, setSelectedEmail] = useState("");
   const [selectedPermission, setSelectedPermission] = useState<string>("manage_registrations");
 
   useEffect(() => {
@@ -60,13 +60,13 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
       const items = Array.isArray(data) ? data : [];
 
       if (items.length > 0) {
-        const userIds = items.map(p => p.user_id).filter(Boolean);
-        const profiles = userIds.length > 0 ? await apiClient.getUsersByIds(userIds) : [];
+        const profiles = await apiClient.listUsers({ userType: "college" });
+        const profileList = Array.isArray(profiles) ? profiles : [];
 
         const enrichedPermissions = items.map(p => ({
           ...p,
           id: p.permission_id || p.id,
-          user: profiles?.find(profile => profile.userId === p.user_id),
+          user: profileList.find(profile => profile.email === p.subject_id),
         }));
 
         setPermissions(enrichedPermissions);
@@ -98,11 +98,11 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
   };
 
   const grantPermission = async () => {
-    if (!selectedUser || !user) return;
+    if (!selectedEmail || !user) return;
 
     try {
       await apiClient.request("POST", `/events/${eventId}/permissions`, {
-        user_id: selectedUser,
+        email: selectedEmail,
         permission_type: selectedPermission,
       });
 
@@ -111,7 +111,7 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
         description: "User can now access this event",
       });
 
-      setSelectedUser("");
+      setSelectedEmail("");
       fetchPermissions();
     } catch (error: any) {
       if (error?.response?.status === 409) {
@@ -131,9 +131,16 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
     }
   };
 
-  const revokePermission = async (permissionId: string) => {
+  const revokePermission = async (permissionId: string, email?: string) => {
     try {
-      await apiClient.request("DELETE", `/events/${eventId}/permissions/${permissionId}`);
+      await apiClient.request(
+        "DELETE",
+        `/events/${eventId}/permissions/${permissionId}`,
+        undefined,
+        {
+          params: { email },
+        }
+      );
 
       toast({
         title: "Permission revoked",
@@ -205,11 +212,11 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
                       key={u.user_id}
                       type="button"
                       className={`w-full text-left px-3 py-2 text-sm hover:bg-muted ${
-                        selectedUser === u.user_id ? "bg-muted" : ""
+                        selectedEmail === u.email ? "bg-muted" : ""
                       }`}
                       onClick={() => {
-                        setSelectedUser(u.user_id);
-                        setSearchQuery(u.full_name);
+                          setSelectedEmail(u.email);
+                          setSearchQuery(u.email);
                       }}
                     >
                       <div className="font-medium">{u.full_name}</div>
@@ -235,7 +242,7 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
               </Select>
             </div>
             <div className="flex items-end">
-              <Button onClick={grantPermission} disabled={!selectedUser}>
+              <Button onClick={grantPermission} disabled={!selectedEmail}>
                 <Plus className="h-4 w-4 mr-2" />
                 Grant
               </Button>
@@ -262,15 +269,15 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
                 >
                   <div className="flex items-center gap-3">
                     <div>
-                      <div className="font-medium">{perm.user?.full_name || "Unknown"}</div>
-                      <div className="text-xs text-muted-foreground">{perm.user?.email}</div>
+                      <div className="font-medium">{perm.user?.full_name || perm.subject_id || "Unknown"}</div>
+                      <div className="text-xs text-muted-foreground">{perm.user?.email || perm.subject_id}</div>
                     </div>
                     <Badge variant="outline">{getPermissionLabel(perm.permission_type)}</Badge>
                   </div>
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => revokePermission(perm.id || perm.permission_id || "")}
+                    onClick={() => revokePermission(perm.id || perm.permission_id || "", perm.subject_id)}
                   >
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
