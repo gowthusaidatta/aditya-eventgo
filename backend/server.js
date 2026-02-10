@@ -2108,6 +2108,7 @@ app.put("/users/:userId", requireAuth, async (req, res) => {
 
     update.UpdateExpression = `${update.UpdateExpression}, #createdAt = if_not_exists(#createdAt, :createdAt)`;
     update.ExpressionAttributeNames["#createdAt"] = "createdAt";
+    const existing = await getUserWithFallbackKey(req.params.userId);
     update.ExpressionAttributeValues[":createdAt"] =
       existing.Item?.createdAt || existing.Item?.created_at || now;
 
@@ -2116,7 +2117,7 @@ app.put("/users/:userId", requireAuth, async (req, res) => {
       update,
     });
 
-    const updatedProfile = data.Attributes || { userId: req.params.userId, ...normalized };
+    const updatedProfile = data.Attributes || { userId: req.params.userId, ...updateFields };
     const role = updatedProfile.user_type || "student";
     await Promise.all([
       writeMainItem(
@@ -2251,7 +2252,6 @@ app.put("/users/me", requireAuth, async (req, res) => {
 
     update.UpdateExpression = `${update.UpdateExpression}, #createdAt = if_not_exists(#createdAt, :createdAt)`;
     update.ExpressionAttributeNames["#createdAt"] = "createdAt";
-    const existing = await getUserWithFallbackKey(req.params.userId);
     const existing = await getUserWithFallbackKey(userId);
     update.ExpressionAttributeValues[":createdAt"] =
       existing.Item?.createdAt || existing.Item?.created_at || req.body?.createdAt || now;
