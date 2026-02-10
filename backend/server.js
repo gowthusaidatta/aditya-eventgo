@@ -144,9 +144,10 @@ const cognitoClient = COGNITO_REGION
   ? new CognitoIdentityProviderClient({ region: COGNITO_REGION })
   : null;
 
-const mainTable = EVENTGO_MAIN_TABLE || null;
+const mainTableDisabled = process.env.EVENTGO_MAIN_TABLE_DISABLED === "true";
+const mainTable = mainTableDisabled ? null : EVENTGO_MAIN_TABLE || null;
 const defaultTenantId = EVENTGO_DEFAULT_TENANT_ID || "tenant_default";
-const dualWriteMain = EVENTGO_DUAL_WRITE !== "false";
+const dualWriteMain = !mainTableDisabled && EVENTGO_DUAL_WRITE !== "false";
 const legacyFallbackEnabled = ENABLE_LEGACY_FALLBACK === "true";
 const legacyFallbackDisabledTenants = (LEGACY_FALLBACK_DISABLED_TENANTS || "")
   .split(",")
