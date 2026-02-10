@@ -107,8 +107,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const userType = pendingProfile?.user_type || "student";
         profileData = await apiClient.updateProfile({
           user_type: userType,
-          full_name: pendingProfile?.full_name || resolvedUser.name || resolvedUser.email,
-          email: pendingProfile?.email || resolvedUser.email,
+          full_name:
+            pendingProfile?.full_name ||
+            profileData?.full_name ||
+            resolvedUser.name ||
+            resolvedUser.email,
+          email: pendingProfile?.email || profileData?.email || resolvedUser.email,
           phone: pendingProfile?.phone ?? null,
           college_name: pendingProfile?.college_name ?? null,
           graduation_year: pendingProfile?.graduation_year ?? null,
