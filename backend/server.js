@@ -945,14 +945,15 @@ app.get("/users/me", requireAuth, async (req, res) => {
     );
     const existing = data.Item || {};
     const now = new Date().toISOString();
-    const isSuperAdmin = isSuperAdminEmail(req.user.email);
+    const effectiveEmail = req.user.email || existing.email || req.user.raw?.username;
+    const isSuperAdmin = isSuperAdminEmail(effectiveEmail);
 
     if (isSuperAdmin) {
       const updateFields = {
         user_type: "admin",
         is_verified: true,
-        email: existing.email || req.user.email,
-        full_name: existing.full_name || req.user.name || req.user.email,
+        email: existing.email || effectiveEmail,
+        full_name: existing.full_name || req.user.name || effectiveEmail,
         updatedAt: now,
         createdAt: existing.createdAt || now,
       };
@@ -1086,12 +1087,13 @@ app.put("/users/me", requireAuth, async (req, res) => {
   try {
     const userId = req.user.sub;
     const now = new Date().toISOString();
-    const isSuperAdmin = isSuperAdminEmail(req.user.email);
+    const existing = await getUserWithFallbackKey(userId);
+    const effectiveEmail = req.user.email || existing.Item?.email || req.user.raw?.username;
+    const isSuperAdmin = isSuperAdminEmail(effectiveEmail);
     const updatePayload = { ...req.body };
     delete updatePayload.userId;
     delete updatePayload.user_id;
 
-    const existing = await getUserWithFallbackKey(userId);
     const normalized = applyDefaults({
       incoming: updatePayload,
       defaults: USERS_DEFAULTS,
@@ -1110,8 +1112,8 @@ app.put("/users/me", requireAuth, async (req, res) => {
     if (isSuperAdmin) {
       updateFields.user_type = "admin";
       updateFields.is_verified = true;
-      updateFields.email = req.user.email;
-      updateFields.full_name = updateFields.full_name || req.user.name || req.user.email;
+      updateFields.email = effectiveEmail;
+      updateFields.full_name = updateFields.full_name || req.user.name || effectiveEmail;
     }
 
     const update = buildUpdateExpression(updateFields);
