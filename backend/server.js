@@ -1786,6 +1786,20 @@ app.get("/users/me", requireAuth, async (req, res) => {
     if (!ok) return;
     const mainProfile = await getMainUserProfile(userId);
     let existing = mainProfile ? { userId, ...mainProfile } : null;
+    if (!existing && mainTable) {
+      const now = new Date().toISOString();
+      const fallbackName = req.user.name || req.user.email || req.user.raw?.username || req.user.sub;
+      const seedProfile = {
+        email: req.user.email || null,
+        full_name: fallbackName,
+        user_type: "student",
+        is_verified: false,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await writeMainItem(buildUserProfileItem(userId, seedProfile));
+      existing = { userId, ...seedProfile };
+    }
     if (!existing && USERS_TABLE) {
       if (!isLegacyFallbackAllowed(tenantId)) {
         res.status(403).json({ message: "Legacy fallback disabled" });
