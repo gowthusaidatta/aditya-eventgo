@@ -585,12 +585,15 @@ export default function AdminDashboard() {
     fetchEvents();
   };
 
+  const normalizeSearchValue = (value?: string | null) => (value || "").toLowerCase();
+
   const filteredUsers = users.filter(user => {
-    const matchesSearch = 
-      user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.roll_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.college_id?.toLowerCase().includes(searchTerm.toLowerCase());
+    const normalizedQuery = normalizeSearchValue(searchTerm);
+    const matchesSearch =
+      normalizeSearchValue(user.full_name).includes(normalizedQuery) ||
+      normalizeSearchValue(user.email).includes(normalizedQuery) ||
+      normalizeSearchValue(user.roll_number).includes(normalizedQuery) ||
+      normalizeSearchValue(user.college_id).includes(normalizedQuery);
     
     const matchesType = filterType === "all" || user.user_type === filterType;
     const matchesVerified = filterVerified === "all" || 
