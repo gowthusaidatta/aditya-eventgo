@@ -1214,9 +1214,7 @@ app.get("/events", async (req, res) => {
   try {
     const { type, status, featured, limit, createdBy, isHackathon } = req.query;
     const tenantId = resolveTenantIdFromRequest(req, defaultTenantId);
-
-    if (mainTable) {
-      const items = await listMainEvents(tenantId);
+    const applyFilters = (items) => {
       let filtered = items || [];
 
       if (type) {
@@ -1235,6 +1233,70 @@ app.get("/events", async (req, res) => {
       if (isHackathon !== undefined) {
         const flag = isHackathon === "true";
         filtered = filtered.filter((item) => Boolean(item.is_hackathon) === flag);
+      }
+
+      return filtered;
+    };
+
+    if (mainTable) {
+      const items = await listMainEvents(tenantId);
+      let filtered = applyFilters(items);
+
+      if (isLegacyFallbackAllowed(tenantId) && EVENTS_TABLE) {
+        const params = {
+          TableName: EVENTS_TABLE,
+          Limit: limit ? Number(limit) : undefined,
+        };
+
+        if (type || status || featured || createdBy || isHackathon !== undefined) {
+          const filters = [];
+          const values = {};
+          const names = {};
+
+          if (type) {
+            filters.push("#event_type = :event_type");
+            values[":event_type"] = type;
+            names["#event_type"] = "event_type";
+          }
+
+          if (status) {
+            filters.push("#status = :status");
+            values[":status"] = status;
+            names["#status"] = "status";
+          }
+
+          if (featured !== undefined) {
+            filters.push("#is_featured = :is_featured");
+            values[":is_featured"] = featured === "true";
+            names["#is_featured"] = "is_featured";
+          }
+
+          if (createdBy) {
+            filters.push("#created_by = :created_by");
+            values[":created_by"] = createdBy;
+            names["#created_by"] = "created_by";
+          }
+
+          if (isHackathon !== undefined) {
+            filters.push("#is_hackathon = :is_hackathon");
+            values[":is_hackathon"] = isHackathon === "true";
+            names["#is_hackathon"] = "is_hackathon";
+          }
+
+          params.FilterExpression = filters.join(" AND ");
+          params.ExpressionAttributeValues = values;
+          params.ExpressionAttributeNames = names;
+        }
+
+        const legacyData = await ddb.send(new ScanCommand(params));
+        const legacyItems = applyFilters(legacyData.Items || []);
+        const merged = new Map();
+        filtered.forEach((item) => merged.set(item.eventId || item.event_id, item));
+        legacyItems.forEach((item) => {
+          const key = item.eventId || item.event_id;
+          if (key) merged.set(key, item);
+        });
+        filtered = Array.from(merged.values());
       }
 
       if (limit) {
@@ -1308,16 +1370,13 @@ app.get("/events/:eventId", async (req, res) => {
     const tenantId = resolveTenantIdFromRequest(req, defaultTenantId);
     if (mainTable) {
       const eventItem = await getMainEventById(tenantId, req.params.eventId);
-      if (!eventItem) {
-        res.status(404).json({ message: "Event not found" });
+      if (eventItem) {
+        res.json({
+          ...eventItem,
+          schedule: [],
+        });
         return;
       }
-
-      res.json({
-        ...eventItem,
-        schedule: [],
-      });
-      return;
     }
 
     if (!isLegacyFallbackAllowed(tenantId)) {
@@ -1364,16 +1423,13 @@ app.get("/events/:eventId/schema", async (req, res) => {
     const tenantId = resolveTenantIdFromRequest(req, defaultTenantId);
     if (mainTable) {
       const eventItem = await getMainEventById(tenantId, req.params.eventId);
-      if (!eventItem) {
-        res.status(404).json({ message: "Event not found" });
+      if (eventItem) {
+        res.json({
+          event: eventItem,
+          registration_schema: getRegistrationSchema(eventItem),
+        });
         return;
       }
-
-      res.json({
-        event: eventItem,
-        registration_schema: getRegistrationSchema(eventItem),
-      });
-      return;
     }
 
     if (!isLegacyFallbackAllowed(tenantId)) {

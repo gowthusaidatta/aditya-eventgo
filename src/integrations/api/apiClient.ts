@@ -116,7 +116,9 @@ class ApiClient {
     // Add request interceptor to include auth token
     this.client.interceptors.request.use(
       (config) => {
-        const token = localStorage.getItem("cognito_access_token");
+        const idToken = localStorage.getItem("cognito_id_token");
+        const accessToken = localStorage.getItem("cognito_access_token");
+        const token = idToken || accessToken;
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
         }
