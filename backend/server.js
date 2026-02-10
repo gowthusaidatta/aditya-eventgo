@@ -1048,42 +1048,6 @@ app.get("/users", requireAuth, async (req, res) => {
   }
 });
 
-app.put("/users/:userId", requireAuth, async (req, res) => {
-  try {
-    const now = new Date().toISOString();
-    const existing = await getUserWithFallbackKey(req.params.userId);
-    const normalized = applyDefaults({
-      incoming: req.body,
-      defaults: USERS_DEFAULTS,
-      existing: existing.Item,
-      omitFields: ["userId", "user_id", "createdAt", "created_at", "updatedAt", "updated_at"],
-    });
-
-    const update = buildUpdateExpression({
-      ...normalized,
-      updatedAt: now,
-    });
-    if (!update) {
-      res.status(400).json({ message: "No fields to update" });
-      return;
-    }
-
-    update.UpdateExpression = `${update.UpdateExpression}, #createdAt = if_not_exists(#createdAt, :createdAt)`;
-    update.ExpressionAttributeNames["#createdAt"] = "createdAt";
-    update.ExpressionAttributeValues[":createdAt"] =
-      existing.Item?.createdAt || existing.Item?.created_at || now;
-
-    const data = await updateUserWithFallbackKey({
-      userId: req.params.userId,
-      update,
-    });
-
-    res.json(data.Attributes || {});
-  } catch (error) {
-    res.status(500).json({ message: "Failed to update user" });
-  }
-});
-
 app.delete("/users/:userId", requireAuth, async (req, res) => {
   try {
     const target = await ddb.send(
@@ -1162,6 +1126,42 @@ app.put("/users/me", requireAuth, async (req, res) => {
       message: "Failed to update user profile",
       code: error?.name || "UnknownError",
     });
+  }
+});
+
+app.put("/users/:userId", requireAuth, async (req, res) => {
+  try {
+    const now = new Date().toISOString();
+    const existing = await getUserWithFallbackKey(req.params.userId);
+    const normalized = applyDefaults({
+      incoming: req.body,
+      defaults: USERS_DEFAULTS,
+      existing: existing.Item,
+      omitFields: ["userId", "user_id", "createdAt", "created_at", "updatedAt", "updated_at"],
+    });
+
+    const update = buildUpdateExpression({
+      ...normalized,
+      updatedAt: now,
+    });
+    if (!update) {
+      res.status(400).json({ message: "No fields to update" });
+      return;
+    }
+
+    update.UpdateExpression = `${update.UpdateExpression}, #createdAt = if_not_exists(#createdAt, :createdAt)`;
+    update.ExpressionAttributeNames["#createdAt"] = "createdAt";
+    update.ExpressionAttributeValues[":createdAt"] =
+      existing.Item?.createdAt || existing.Item?.created_at || now;
+
+    const data = await updateUserWithFallbackKey({
+      userId: req.params.userId,
+      update,
+    });
+
+    res.json(data.Attributes || {});
+  } catch (error) {
+    res.status(500).json({ message: "Failed to update user" });
   }
 });
 
