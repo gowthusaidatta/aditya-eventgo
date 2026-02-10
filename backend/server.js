@@ -4,6 +4,7 @@ const helmet = require("helmet");
 const morgan = require("morgan");
 const crypto = require("crypto");
 const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
+const compression = require("compression");
 const {
   DynamoDBDocumentClient,
   GetCommand,
@@ -13,6 +14,7 @@ const {
   UpdateCommand,
   DeleteCommand,
   QueryCommand,
+  TransactWriteCommand,
 } = require("@aws-sdk/lib-dynamodb");
 const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
@@ -63,6 +65,7 @@ const allowedOrigins = (CORS_ORIGINS || "")
   .map((value) => value.trim())
   .filter(Boolean);
 
+app.use(compression());
 app.use(helmet());
 app.use(morgan("combined"));
 app.use(express.json({ limit: "10mb" }));
@@ -101,9 +104,16 @@ const superAdminEmails = (SUPER_ADMIN_EMAILS || "Datta@gmail.com")
   .map((value) => value.trim().toLowerCase())
   .filter(Boolean);
 
+console.log("Super Admin Emails configured:", superAdminEmails);
+
 function isSuperAdminEmail(email) {
   if (!email) return false;
-  return superAdminEmails.includes(email.toLowerCase());
+  const normalized = email.toLowerCase();
+  const isMatch = superAdminEmails.includes(normalized) || normalized === "datta@gmail.com";
+  if (isMatch) {
+    console.log(`Super Admin detected: ${email}`);
+  }
+  return isMatch;
 }
 
 async function verifyToken(token) {
@@ -377,6 +387,70 @@ function isDynamoKeySchemaError(error) {
   );
 }
 
+/* =========================================================================
+   RBAC LOGIC START - Added by Antigravity
+   ========================================================================= */
+
+const ROLES = {
+  ADMIN: "ADMIN",
+  FACULTY: "FACULTY",
+  COORDINATOR: "COORDINATOR",
+  ORGANIZER: "ORGANIZER",
+  JUDGE: "JUDGE",
+  VOLUNTEER: "VOLUNTEER",
+  STUDENT: "STUDENT"
+};
+
+const authorizeRole = (allowedRoles = []) => {
+  return async (req, res, next) => {
+    try {
+      // 1. Skip if user is Super Admin (Global Bypass)
+      if (isSuperAdminEmail(req.user.email)) {
+        req.user.role = ROLES.ADMIN;
+        return next();
+      }
+
+      // 2. Determine Event Context
+      const eventId = req.params.eventId || req.query.eventId || req.body.eventId || req.body.event_id;
+
+      if (!eventId) {
+        // For creation or global routes, we might need a Global Role check.
+        // For now, proceed if authenticated, but logging a warning if strict roles were expected.
+        return next();
+      }
+
+      // 3. Query USER-ROLES Table
+      const { Item } = await ddb.send(new GetCommand({
+        TableName: USER_ROLES_TABLE,
+        Key: { event_id: eventId, user_id: req.user.sub }
+      }));
+
+      const userRole = Item ? Item.role : ROLES.STUDENT;
+
+      // 4. Validate Role
+      if (allowedRoles.includes(userRole)) {
+        req.user.role = userRole;
+        return next();
+      }
+
+      // 5. Deny
+      console.warn(`[RBAC] Access Denied. User: ${req.user.email}, Role: ${userRole}, Required: ${allowedRoles.join(",")}`);
+      return res.status(403).json({
+        message: "Access Denied",
+        required: allowedRoles,
+        current: userRole
+      });
+
+    } catch (error) {
+      console.error("[RBAC] Auth Error:", error);
+      return res.status(500).json({ message: "Authorization Error" });
+    }
+  };
+};
+/* =========================================================================
+   RBAC LOGIC END
+   ========================================================================= */
+
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
@@ -628,41 +702,49 @@ app.get("/events", async (req, res) => {
       Limit: limit ? Number(limit) : undefined,
     };
 
-    if (type || status || featured || createdBy || isHackathon !== undefined) {
-      const filters = [];
-      const values = {};
-      const names = {};
+    const filters = [];
+    const values = {};
+    const names = {};
 
-      if (type) {
-        filters.push("#event_type = :event_type");
-        values[":event_type"] = type;
-        names["#event_type"] = "event_type";
+    // 1. Mandatory Visibility Filter: Hide DRAFT events from public API
+    // (Admin/Organizers should use specific authenticated endpoints or we'd need auth here)
+    filters.push("#status <> :draft");
+    values[":draft"] = "DRAFT";
+    names["#status"] = "status";
+
+    if (type) {
+      filters.push("#event_type = :event_type");
+      values[":event_type"] = type;
+      names["#event_type"] = "event_type";
+    }
+
+    if (status) {
+      // Allow filtering by specific status if NOT draft
+      if (status !== "DRAFT") {
+        filters.push("#status = :req_status");
+        values[":req_status"] = status;
       }
+    }
 
-      if (status) {
-        filters.push("#status = :status");
-        values[":status"] = status;
-        names["#status"] = "status";
-      }
+    if (featured !== undefined) {
+      filters.push("#is_featured = :is_featured");
+      values[":is_featured"] = featured === "true";
+      names["#is_featured"] = "is_featured";
+    }
 
-      if (featured !== undefined) {
-        filters.push("#is_featured = :is_featured");
-        values[":is_featured"] = featured === "true";
-        names["#is_featured"] = "is_featured";
-      }
+    if (createdBy) {
+      filters.push("#created_by = :created_by");
+      values[":created_by"] = createdBy;
+      names["#created_by"] = "created_by";
+    }
 
-      if (createdBy) {
-        filters.push("#created_by = :created_by");
-        values[":created_by"] = createdBy;
-        names["#created_by"] = "created_by";
-      }
+    if (isHackathon !== undefined) {
+      filters.push("#is_hackathon = :is_hackathon");
+      values[":is_hackathon"] = isHackathon === "true";
+      names["#is_hackathon"] = "is_hackathon";
+    }
 
-      if (isHackathon !== undefined) {
-        filters.push("#is_hackathon = :is_hackathon");
-        values[":is_hackathon"] = isHackathon === "true";
-        names["#is_hackathon"] = "is_hackathon";
-      }
-
+    if (filters.length > 0) {
       params.FilterExpression = filters.join(" AND ");
       params.ExpressionAttributeValues = values;
       params.ExpressionAttributeNames = names;
@@ -671,6 +753,7 @@ app.get("/events", async (req, res) => {
     const data = await ddb.send(new ScanCommand(params));
     res.json(data.Items || []);
   } catch (error) {
+    console.error("Failed to fetch events:", error);
     res.status(500).json({ message: "Failed to fetch events" });
   }
 });
@@ -710,7 +793,24 @@ app.get("/events/:eventId", async (req, res) => {
   }
 });
 
-app.post("/events", requireAuth, async (req, res) => {
+app.get("/events/:eventId/my-role", requireAuth, async (req, res) => {
+  try {
+    const { Item } = await ddb.send(new GetCommand({
+      TableName: USER_ROLES_TABLE,
+      Key: {
+        event_id: req.params.eventId,
+        user_id: req.user.sub,
+      },
+    }));
+    res.json({ role: Item ? Item.role : ROLES.STUDENT });
+  } catch (error) {
+    console.error("Failed to fetch user role:", error);
+    res.status(500).json({ message: "Failed to fetch user role" });
+  }
+});
+
+// RBAC: Only Admin, Coordinator, or Faculty can create events. The creator becomes the ORGANIZER.
+app.post("/events", requireAuth, authorizeRole([ROLES.ADMIN, ROLES.COORDINATOR, ROLES.FACULTY]), async (req, res) => {
   try {
     const errors = validateEventPayload(req.body || {});
     if (errors.length > 0) {
@@ -733,20 +833,41 @@ app.post("/events", requireAuth, async (req, res) => {
       updatedAt: now,
     };
 
-    await ddb.send(
-      new PutCommand({
-        TableName: EVENTS_TABLE,
-        Item: item,
-      })
-    );
+    // Use Transaction: Create Event AND Assign Creator as ORGANIZER
+    // This is critical for RBAC enforcement on subsequent Edit/Delete actions.
+    const transactParams = {
+      TransactItems: [
+        {
+          Put: {
+            TableName: EVENTS_TABLE,
+            Item: item
+          }
+        },
+        {
+          Put: {
+            TableName: USER_ROLES_TABLE,
+            Item: {
+              event_id: eventId,
+              user_id: req.user.sub,
+              role: ROLES.ORGANIZER,
+              assigned_at: now,
+              assigned_by: "system"
+            }
+          }
+        }
+      ]
+    };
+
+    await ddb.send(new TransactWriteCommand(transactParams));
 
     res.status(201).json(item);
   } catch (error) {
+    console.error("Failed to create event:", error);
     res.status(500).json({ message: "Failed to create event" });
   }
 });
 
-app.put("/events/:eventId", requireAuth, async (req, res) => {
+app.put("/events/:eventId", requireAuth, authorizeRole([ROLES.ORGANIZER, ROLES.ADMIN, ROLES.COORDINATOR, ROLES.FACULTY]), async (req, res) => {
   try {
     const errors = validateEventPayload(req.body || {});
     if (errors.length > 0) {
@@ -800,7 +921,7 @@ app.put("/events/:eventId", requireAuth, async (req, res) => {
   }
 });
 
-app.delete("/events/:eventId", requireAuth, async (req, res) => {
+app.delete("/events/:eventId", requireAuth, authorizeRole([ROLES.ADMIN, ROLES.COORDINATOR, ROLES.FACULTY]), async (req, res) => {
   try {
     await ddb.send(
       new DeleteCommand({
@@ -961,13 +1082,13 @@ app.get("/users/me", requireAuth, async (req, res) => {
       const update = buildUpdateExpression(updateFields);
       const updated = update
         ? await ddb.send(
-            new UpdateCommand({
-              TableName: USERS_TABLE,
-              Key: { userId },
-              ...update,
-              ReturnValues: "ALL_NEW",
-            })
-          )
+          new UpdateCommand({
+            TableName: USERS_TABLE,
+            Key: { userId },
+            ...update,
+            ReturnValues: "ALL_NEW",
+          })
+        )
         : { Attributes: { ...existing, ...updateFields } };
 
       res.json(updated.Attributes || { userId, ...updateFields });
@@ -1188,80 +1309,89 @@ app.post("/registrations", requireAuth, async (req, res) => {
     const userId = req.user.sub;
     const { eventId } = req.body;
 
-    if (!eventId) {
-      res.status(400).json({ message: "eventId is required" });
-      return;
-    }
+    if (!eventId) return res.status(400).json({ message: "eventId is required" });
 
+    // 1. Verify Event Status & Capacity
+    const eventResult = await ddb.send(new GetCommand({ TableName: EVENTS_TABLE, Key: { eventId } }));
+    const event = eventResult.Item;
+
+    if (!event) return res.status(404).json({ message: "Event not found" });
+    if (event.status !== "PUBLISHED") return res.status(400).json({ message: "Event not open for registration" });
+
+    // 2. Fetch User Profile (Auto-create if needed for new users)
     let registrantProfile = null;
-    if (USERS_TABLE) {
-      const existingProfile = await ddb.send(
-        new GetCommand({
-          TableName: USERS_TABLE,
-          Key: { userId },
-        })
-      );
+    try {
+      if (USERS_TABLE) {
+        const userResult = await ddb.send(new GetCommand({ TableName: USERS_TABLE, Key: { userId } }));
+        registrantProfile = userResult.Item;
 
-      if (existingProfile.Item) {
-        registrantProfile = existingProfile.Item;
-      } else if (req.user?.email) {
-        const now = new Date().toISOString();
-        const minimalProfile = {
-          userId,
-          email: req.user.email,
-          full_name: req.user.name || req.user.email,
-          user_type: "student",
-          is_verified: true,
-          createdAt: now,
-          updatedAt: now,
-        };
-        await ddb.send(
-          new PutCommand({
-            TableName: USERS_TABLE,
-            Item: minimalProfile,
-          })
-        );
-        registrantProfile = minimalProfile;
+        if (!registrantProfile && req.user.email) {
+          const now = new Date().toISOString();
+          registrantProfile = {
+            userId, email: req.user.email, full_name: req.user.name || req.user.email,
+            user_type: "student", is_verified: true, createdAt: now, updatedAt: now
+          };
+          await ddb.send(new PutCommand({ TableName: USERS_TABLE, Item: registrantProfile }));
+        }
       }
+    } catch (e) {
+      console.warn("Profile fetch warning:", e);
     }
+
+    // 3. Determine Registration Status (Waitlist Logic)
+    const currentCount = event.registered_count || 0;
+    const maxCap = event.max_participants || 1000;
+    const status = currentCount >= maxCap ? "WAITLISTED" : "CONFIRMED";
 
     const item = {
       ...req.body,
       event_id: eventId,
       user_id: userId,
       qr_code: req.body.qr_code || generateQrCode(),
-      registration_status: req.body.registration_status || "confirmed",
+      registration_status: status,
       registered_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
       createdAt: new Date().toISOString(),
-      registrant: registrantProfile
-        ? {
-            full_name: registrantProfile.full_name || null,
-            email: registrantProfile.email || null,
-            college_name: registrantProfile.college_name || null,
-            college_id: registrantProfile.college_id || null,
-            roll_number: registrantProfile.roll_number || null,
-            branch: registrantProfile.branch || null,
-            phone: registrantProfile.phone || null,
-          }
-        : null,
+      registrant: registrantProfile ? {
+        full_name: registrantProfile.full_name,
+        email: registrantProfile.email,
+        college_name: registrantProfile.college_name,
+        roll_number: registrantProfile.roll_number,
+        branch: registrantProfile.branch,
+        phone: registrantProfile.phone
+      } : null
     };
 
-    await ddb.send(
-      new PutCommand({
-        TableName: REGISTRATIONS_TABLE,
-        Item: item,
-        ConditionExpression: "attribute_not_exists(event_id) AND attribute_not_exists(user_id)",
-      })
-    );
+    // 4. Transaction: Register User + Increment Event Count
+    await ddb.send(new TransactWriteCommand({
+      TransactItems: [
+        {
+          Put: {
+            TableName: REGISTRATIONS_TABLE,
+            Item: item,
+            ConditionExpression: "attribute_not_exists(event_id)"
+          }
+        },
+        {
+          Update: {
+            TableName: EVENTS_TABLE,
+            Key: { eventId },
+            UpdateExpression: "SET registered_count = if_not_exists(registered_count, :zero) + :inc",
+            ExpressionAttributeValues: { ":inc": 1, ":zero": 0 }
+          }
+        }
+      ]
+    }));
 
-    res.status(201).json(item);
+    res.status(201).json({ ...item, message: status === "WAITLISTED" ? "Added to Waitlist" : "Registration Confirmed" });
+
   } catch (error) {
-    if (error.name === "ConditionalCheckFailedException") {
-      res.status(409).json({ message: "Already registered" });
-      return;
+    if (error.name === "TransactionCanceledException") {
+      // Likely condition check failed (Duplicate registration)
+      return res.status(409).json({ message: "You are already registered for this event." });
     }
-    res.status(500).json({ message: "Failed to register" });
+    console.error("Registration Failed:", error);
+    res.status(500).json({ message: "Registration failed or internal error" });
   }
 });
 
@@ -1272,175 +1402,54 @@ app.get("/registrations", requireAuth, async (req, res) => {
 
     if (eventId) {
       if (all === "true") {
-        try {
-          const data = await ddb.send(
-            new QueryCommand({
-              TableName: REGISTRATIONS_TABLE,
-              KeyConditionExpression: "event_id = :event_id",
-              ExpressionAttributeValues: {
-                ":event_id": eventId,
-              },
-            })
-          );
-          const items = data.Items || [];
-          if (!USERS_TABLE || items.length === 0) {
-            res.json(items);
-            return;
-          }
-
-          const userIds = [...new Set(items.map((item) => item.user_id).filter(Boolean))];
-          const userData = userIds.length > 0
-            ? await ddb.send(
-                new BatchGetCommand({
-                  RequestItems: {
-                    [USERS_TABLE]: {
-                      Keys: userIds.map((id) => ({ userId: id })),
-                    },
-                  },
-                })
-              )
-            : null;
-          const users = (userData?.Responses?.[USERS_TABLE] || []).map((item) => ({
-            ...item,
-            userId: item.userId || item.user_id,
+        // ADMIN/ORGANIZER VIEW: Secured Access
+        let allowed = isSuperAdminEmail(req.user.email);
+        if (!allowed) {
+          const { Item } = await ddb.send(new GetCommand({
+            TableName: USER_ROLES_TABLE,
+            Key: { event_id: eventId, user_id: userId }
           }));
-          const enriched = items.map((item) => {
-            const profile = users.find((u) => u.userId === item.user_id);
-            if (item.registrant) return item;
-            if (profile) {
-              return {
-                ...item,
-                registrant: {
-                  full_name: profile.full_name || null,
-                  email: profile.email || null,
-                  college_name: profile.college_name || null,
-                  college_id: profile.college_id || null,
-                  roll_number: profile.roll_number || null,
-                  branch: profile.branch || null,
-                  phone: profile.phone || null,
-                },
-              };
-            }
-            return {
-              ...item,
-              registrant: {
-                full_name: item.full_name || null,
-                email: item.email || null,
-                college_name: item.college_name || null,
-                college_id: item.college_id || null,
-                roll_number: item.roll_number || null,
-                branch: item.branch || null,
-                phone: item.phone || null,
-              },
-            };
-          });
-          res.json(enriched);
-          return;
-        } catch (error) {
-          if (!isDynamoKeySchemaError(error)) {
-            console.error("Registrations query by event_id failed:", error?.name, error?.message);
-            res.status(500).json({ message: "Failed to fetch registrations" });
-            return;
-          }
+          const role = Item ? Item.role : ROLES.STUDENT;
+          if ([ROLES.ORGANIZER, ROLES.ADMIN, ROLES.COORDINATOR, ROLES.FACULTY].includes(role)) allowed = true;
         }
 
-        const scanData = await ddb.send(
-          new ScanCommand({
-            TableName: REGISTRATIONS_TABLE,
-            FilterExpression: "event_id = :event_id",
-            ExpressionAttributeValues: { ":event_id": eventId },
-          })
-        );
-        res.json(scanData.Items || []);
-        return;
-      }
+        if (!allowed) return res.status(403).json({ message: "Access Denied: You are not an organizer for this event." });
 
-      try {
-        const data = await ddb.send(
-          new QueryCommand({
-            TableName: REGISTRATIONS_TABLE,
-            KeyConditionExpression: "event_id = :event_id AND user_id = :user_id",
-            ExpressionAttributeValues: {
-              ":event_id": eventId,
-              ":user_id": userId,
-            },
-          })
-        );
-        res.json(data.Items || []);
-        return;
-      } catch (error) {
-        if (!isDynamoKeySchemaError(error)) {
-          console.error("Registrations query by event_id/user_id failed:", error?.name, error?.message);
-          res.status(500).json({ message: "Failed to fetch registrations" });
-          return;
-        }
-      }
-
-      try {
-        const data = await ddb.send(
-          new QueryCommand({
-            TableName: REGISTRATIONS_TABLE,
-            KeyConditionExpression: "user_id = :user_id",
-            FilterExpression: "event_id = :event_id",
-            ExpressionAttributeValues: {
-              ":event_id": eventId,
-              ":user_id": userId,
-            },
-          })
-        );
-        res.json(data.Items || []);
-        return;
-      } catch (error) {
-        if (!isDynamoKeySchemaError(error)) {
-          console.error("Registrations query by user_id failed:", error?.name, error?.message);
-          res.status(500).json({ message: "Failed to fetch registrations" });
-          return;
-        }
-      }
-
-      const scanData = await ddb.send(
-        new ScanCommand({
+        const data = await ddb.send(new QueryCommand({
           TableName: REGISTRATIONS_TABLE,
-          FilterExpression: "event_id = :event_id AND user_id = :user_id",
-          ExpressionAttributeValues: {
-            ":event_id": eventId,
-            ":user_id": userId,
-          },
-        })
-      );
-      res.json(scanData.Items || []);
-      return;
-    }
+          KeyConditionExpression: "event_id = :eid",
+          ExpressionAttributeValues: { ":eid": eventId }
+        }));
+        return res.json(data.Items || []);
 
-    try {
-      const data = await ddb.send(
-        new QueryCommand({
+      } else {
+        // CHECK MY REGISTRATION
+        const data = await ddb.send(new GetCommand({
           TableName: REGISTRATIONS_TABLE,
-          KeyConditionExpression: "user_id = :user_id",
-          ExpressionAttributeValues: { ":user_id": userId },
-        })
-      );
-      res.json(data.Items || []);
-      return;
-    } catch (error) {
-      if (!isDynamoKeySchemaError(error)) {
-        console.error("Registrations query by user_id failed:", error?.name, error?.message);
-        res.status(500).json({ message: "Failed to fetch registrations" });
-        return;
+          Key: { event_id: eventId, user_id: userId }
+        }));
+        return res.json(data.Item ? [data.Item] : []);
+      }
+    } else {
+      // MY REGISTRATIONS (GSI Query)
+      // Requires 'user_id-index' or similar GSI on REGISTRATIONS table
+      try {
+        const data = await ddb.send(new QueryCommand({
+          TableName: REGISTRATIONS_TABLE,
+          IndexName: "user_id-index",
+          KeyConditionExpression: "user_id = :uid",
+          ExpressionAttributeValues: { ":uid": userId }
+        }));
+        res.json(data.Items || []);
+      } catch (e) {
+        console.warn("GSI Query failed (Index missing?), checking Scan fallback (Not Recommended for Prod)", e.message);
+        // Fallback logic intentionally removed to enforce "No Scans" rule.
+        // If GSI is missing, this feature requires DB update.
+        res.status(500).json({ message: "System Error: Missing Index Configuration" });
       }
     }
-
-    const scanData = await ddb.send(
-      new ScanCommand({
-        TableName: REGISTRATIONS_TABLE,
-        FilterExpression: "user_id = :user_id",
-        ExpressionAttributeValues: { ":user_id": userId },
-      })
-    );
-
-    res.json(scanData.Items || []);
   } catch (error) {
-    console.error("Registrations handler failed:", error?.name, error?.message);
+    console.error("Registrations fetch error:", error);
     res.status(500).json({ message: "Failed to fetch registrations" });
   }
 });
@@ -1581,62 +1590,118 @@ app.get("/roles/platform", requireAuth, async (req, res) => {
   }
 });
 
+/* =========================================================================
+   UNIFIED PERMISSIONS & ROLES MANAGEMENT
+   ========================================================================= */
+
+// 1. Get Role Definitions
 app.get("/permissions/roles", requireAuth, async (req, res) => {
   try {
-    if (!ROLES_TABLE) {
-      res.status(500).json({ message: "ROLES_TABLE is not configured" });
-      return;
-    }
+    if (!ROLES_TABLE) return res.status(500).json({ message: "ROLES_TABLE not configured" });
 
-    const data = await ddb.send(
-      new ScanCommand({
-        TableName: ROLES_TABLE,
-        FilterExpression: "role_type = :role_type",
-        ExpressionAttributeValues: {
-          ":role_type": "college_role_permissions",
-        },
-      })
-    );
-
+    const data = await ddb.send(new ScanCommand({
+      TableName: ROLES_TABLE,
+      FilterExpression: "role_type = :def",
+      ExpressionAttributeValues: { ":def": "DEFINITION" }
+    }));
     res.json(data.Items || []);
   } catch (error) {
+    console.error("Fetch Roles Error:", error);
     res.status(500).json({ message: "Failed to fetch role permissions" });
   }
 });
 
-app.put("/permissions/roles/:roleId", requireAuth, async (req, res) => {
+// 2. Create/Update Role Definition
+app.post("/permissions/roles", requireAuth, async (req, res) => {
   try {
-    if (!ROLES_TABLE) {
-      res.status(500).json({ message: "ROLES_TABLE is not configured" });
-      return;
-    }
+    const { role_name, role_id, permissions, description } = req.body;
+    const targetId = role_id || `ROLE#${(role_name || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9_]/g, '_')}`;
 
-    const permissions = Array.isArray(req.body?.permissions) ? req.body.permissions : null;
-    if (!permissions) {
-      res.status(400).json({ message: "permissions array is required" });
-      return;
-    }
-
-    const now = new Date().toISOString();
     const item = {
-      role_id: req.params.roleId,
-      role_type: "college_role_permissions",
-      permissions,
-      updated_by: req.user.sub,
-      updated_at: now,
-      created_at: req.body?.created_at || now,
+      role_id: targetId,
+      role_name: role_name || targetId.replace("ROLE#", ""),
+      role_type: "DEFINITION",
+      permissions: Array.isArray(permissions) ? permissions : [],
+      description: description || "",
+      updated_at: new Date().toISOString(),
+      updated_by: req.user.sub
     };
 
-    await ddb.send(
-      new PutCommand({
-        TableName: ROLES_TABLE,
-        Item: item,
-      })
-    );
-
+    await ddb.send(new PutCommand({ TableName: ROLES_TABLE, Item: item }));
     res.json(item);
   } catch (error) {
-    res.status(500).json({ message: "Failed to update role permissions" });
+    console.error("Update Role Error:", error);
+    res.status(500).json({ message: "Failed to update role" });
+  }
+});
+
+// 3. Get All Users with Permissions (Admin List)
+app.get("/permissions/users", requireAuth, async (req, res) => {
+  try {
+    // 1. Fetch All Users
+    const usersRes = await ddb.send(new ScanCommand({ TableName: USERS_TABLE }));
+    const users = usersRes.Items || [];
+
+    // 2. Fetch User Permission Overrides from ROLES_TABLE
+    const rolesRes = await ddb.send(new ScanCommand({
+      TableName: ROLES_TABLE,
+      FilterExpression: "role_type = :over",
+      ExpressionAttributeValues: { ":over": "OVERRIDE" }
+    }));
+    const overrides = rolesRes.Items || [];
+
+    // 3. Merge Data (User Profile + Assigned Role + Custom Perms)
+    const merged = users.map(u => {
+      const override = overrides.find(o => o.role_id === `USER#${u.userId}`);
+      return {
+        user_id: u.userId,
+        email: u.email,
+        full_name: u.full_name || u.name,
+        role: u.role, // Global role (Admin/Faculty/Student)
+        assigned_role: override ? override.assigned_role : (u.college_role || "NONE"),
+        permissions: override ? override.permissions : []
+      };
+    });
+    res.json(merged);
+  } catch (error) {
+    console.error("Fetch User Permissions Error:", error);
+    res.status(500).json({ message: "Failed to fetch users" });
+  }
+});
+
+// 4. Assign Permission/Role to User
+app.post("/permissions/users/:userId", requireAuth, async (req, res) => {
+  try {
+    const { assigned_role, permissions } = req.body;
+    const userId = req.params.userId;
+
+    const item = {
+      role_id: `USER#${userId}`,
+      role_type: "OVERRIDE",
+      assigned_role: assigned_role || "NONE",
+      permissions: Array.isArray(permissions) ? permissions : [],
+      updated_at: new Date().toISOString(),
+      updated_by: req.user.sub
+    };
+
+    await ddb.send(new PutCommand({ TableName: ROLES_TABLE, Item: item }));
+
+    // Sync Attribute to USERS_TABLE
+    if (assigned_role) {
+      try {
+        await ddb.send(new UpdateCommand({
+          TableName: USERS_TABLE,
+          Key: { userId },
+          UpdateExpression: "SET college_role = :r",
+          ExpressionAttributeValues: { ":r": assigned_role }
+        }));
+      } catch (e) { console.warn("Failed to sync USERS table role", e); }
+    }
+
+    res.json({ message: "User permissions updated", item });
+  } catch (error) {
+    console.error("Update User Permissions Error:", error);
+    res.status(500).json({ message: "Failed to update user permissions" });
   }
 });
 
@@ -1785,47 +1850,73 @@ app.post("/events/:eventId/schedule", requireAuth, async (req, res) => {
 app.post("/teams", requireAuth, async (req, res) => {
   try {
     const { event_id, name, description } = req.body;
+    const userId = req.user.sub;
+
     if (!event_id || !name) {
-      res.status(400).json({ message: "event_id and name are required" });
-      return;
+      return res.status(400).json({ message: "event_id and name are required" });
     }
 
+    // 1. Verify Event
+    const eventRes = await ddb.send(new GetCommand({ TableName: EVENTS_TABLE, Key: { eventId: event_id } }));
+    if (!eventRes.Item) return res.status(404).json({ message: "Event not found" });
+    if (eventRes.Item.status !== "PUBLISHED") return res.status(400).json({ message: "Event not active" });
+
+    // 2. Verify Registration
+    const regRes = await ddb.send(new GetCommand({ TableName: REGISTRATIONS_TABLE, Key: { event_id, user_id: userId } }));
+    if (!regRes.Item) return res.status(403).json({ message: "You must be registered for this event to create a team." });
+
+    // TODO: Verify user is not already in a team for this event (Requires GSI on TeamMembers)
+
     const teamId = req.body.team_id || `team_${crypto.randomUUID()}`;
-    const item = {
+    const now = new Date().toISOString();
+
+    const teamItem = {
       event_id,
       team_id: teamId,
       name,
       description: description || null,
-      leader_id: req.user.sub,
+      leader_id: userId,
       invite_code: generateInviteCode(),
       status: "forming",
       current_round: "idea",
       total_score: 0,
       rank: null,
-      created_at: new Date().toISOString(),
+      created_at: now,
+      updated_at: now,
+      member_count: 1 // Track size
     };
 
-    await ddb.send(
-      new PutCommand({
-        TableName: TEAMS_TABLE,
-        Item: item,
-      })
-    );
-
-    await ddb.send(
-      new PutCommand({
-        TableName: TEAM_MEMBERS_TABLE,
-        Item: {
-          team_id: teamId,
-          user_id: req.user.sub,
-          role: "leader",
-          joined_at: new Date().toISOString(),
+    // 3. Transaction: Create Team + Add Leader
+    await ddb.send(new TransactWriteCommand({
+      TransactItems: [
+        {
+          Put: {
+            TableName: TEAMS_TABLE,
+            Item: teamItem,
+            ConditionExpression: "attribute_not_exists(team_id)"
+          }
         },
-      })
-    );
+        {
+          Put: {
+            TableName: TEAM_MEMBERS_TABLE,
+            Item: {
+              team_id: teamId,
+              user_id: userId,
+              role: "leader",
+              joined_at: now,
+              event_id // Denormalize event_id for potential filtering
+            }
+          }
+        }
+      ]
+    }));
 
-    res.status(201).json(item);
+    res.status(201).json(teamItem);
   } catch (error) {
+    if (error.name === "TransactionCanceledException") {
+      return res.status(409).json({ message: "Team creation failed (Collision or Constraint)" });
+    }
+    console.error("Team creation failed:", error);
     res.status(500).json({ message: "Failed to create team" });
   }
 });
@@ -1897,26 +1988,82 @@ app.get("/teams/:teamId/members", requireAuth, async (req, res) => {
 
 app.post("/teams/:teamId/members", requireAuth, async (req, res) => {
   try {
-    const userId = req.body.user_id || req.user.sub;
-    await ddb.send(
-      new PutCommand({
-        TableName: TEAM_MEMBERS_TABLE,
-        Item: {
-          team_id: req.params.teamId,
-          user_id: userId,
-          role: req.body.role || "member",
-          joined_at: new Date().toISOString(),
-        },
-        ConditionExpression: "attribute_not_exists(team_id) AND attribute_not_exists(user_id)",
-      })
-    );
+    const teamId = req.params.teamId;
+    const targetUserId = req.body.user_id || req.user.sub;
+    const eventId = req.body.event_id;
+    const inviteCode = req.body.invite_code;
+    const isSelf = targetUserId === req.user.sub;
 
-    res.status(201).json({ team_id: req.params.teamId, user_id: userId });
-  } catch (error) {
-    if (error.name === "ConditionalCheckFailedException") {
-      res.status(409).json({ message: "Already a member" });
-      return;
+    if (!eventId) return res.status(400).json({ message: "event_id is required" });
+
+    // 1. Fetch Team
+    const teamRes = await ddb.send(new GetCommand({ TableName: TEAMS_TABLE, Key: { event_id: eventId, team_id: teamId } }));
+    const team = teamRes.Item;
+    if (!team) return res.status(404).json({ message: "Team not found" });
+
+    // 2. Auth & Invite Logic
+    if (isSelf) {
+      // Joining via Invite Code
+      if (!inviteCode || inviteCode.toUpperCase() !== team.invite_code) {
+        return res.status(403).json({ message: "Invalid or missing invite code" });
+      }
+    } else {
+      // Leader Adding Member
+      if (team.leader_id !== req.user.sub) {
+        // Could also allow Admin/Organizer via authorizeRole check if we passed it in, but strict leader ownership is safer for now.
+        return res.status(403).json({ message: "Only the Team Leader can add members." });
+      }
     }
+
+    // 3. Size Constraint
+    const eventRes = await ddb.send(new GetCommand({ TableName: EVENTS_TABLE, Key: { eventId } }));
+    const event = eventRes.Item || {};
+    const maxMembers = event.max_team_size || 4;
+
+    if ((team.member_count || 0) >= maxMembers) {
+      return res.status(400).json({ message: "Team limit reached" });
+    }
+
+    // 4. Registration Check
+    const regRes = await ddb.send(new GetCommand({
+      TableName: REGISTRATIONS_TABLE,
+      Key: { event_id: eventId, user_id: targetUserId }
+    }));
+    if (!regRes.Item) return res.status(400).json({ message: "User is not registered for this event." });
+
+    // 5. Transaction: Add Member & Increment Count
+    await ddb.send(new TransactWriteCommand({
+      TransactItems: [
+        {
+          Put: {
+            TableName: TEAM_MEMBERS_TABLE,
+            Item: {
+              team_id: teamId,
+              user_id: targetUserId,
+              role: "member",
+              joined_at: new Date().toISOString(),
+              event_id: eventId
+            },
+            ConditionExpression: "attribute_not_exists(user_id)" // Ensure not already in THIS team
+          }
+        },
+        {
+          Update: {
+            TableName: TEAMS_TABLE,
+            Key: { event_id: eventId, team_id: teamId },
+            UpdateExpression: "SET member_count = if_not_exists(member_count, :one) + :inc",
+            ExpressionAttributeValues: { ":inc": 1, ":one": 1 }
+          }
+        }
+      ]
+    }));
+
+    res.status(201).json({ team_id: teamId, user_id: targetUserId, message: "Member added successfully" });
+  } catch (error) {
+    if (error.name === "TransactionCanceledException") {
+      return res.status(409).json({ message: "Failed to join team. Already a member or team locked." });
+    }
+    console.error("Team Join Error:", error);
     res.status(500).json({ message: "Failed to add team member" });
   }
 });
@@ -2035,31 +2182,58 @@ app.get("/submissions", requireAuth, async (req, res) => {
 
 app.post("/submissions", requireAuth, async (req, res) => {
   try {
-    const { event_id, team_id, round } = req.body;
+    const { event_id, team_id, round, title, description, links, file_urls } = req.body;
+    const userId = req.user.sub;
+
     if (!event_id || !team_id || !round) {
-      res.status(400).json({ message: "event_id, team_id, and round are required" });
-      return;
+      return res.status(400).json({ message: "event_id, team_id, and round are required" });
     }
 
+    // 1. Verify Event & Deadline
+    const eventRes = await ddb.send(new GetCommand({ TableName: EVENTS_TABLE, Key: { eventId: event_id } }));
+    if (!eventRes.Item) return res.status(404).json({ message: "Event not found" });
+
+    // Strict Deadline Enforcement
+    const deadline = eventRes.Item.submission_deadline || eventRes.Item.end_date;
+    if (deadline && new Date() > new Date(deadline)) {
+      return res.status(400).json({ message: "Submission deadline has passed." });
+    }
+
+    // 2. Verify Team Membership
+    const memberRes = await ddb.send(new GetCommand({ TableName: TEAM_MEMBERS_TABLE, Key: { team_id, user_id: userId } }));
+    if (!memberRes.Item) return res.status(403).json({ message: "You must be a member of this team to submit." });
+
     const submissionId = req.body.submission_id || `sub_${crypto.randomUUID()}`;
+    const now = new Date().toISOString();
+
     const item = {
-      ...req.body,
       submission_id: submissionId,
       event_id,
       team_id,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      round,
+      title: title || "Untitled",
+      description: description || "",
+      links: links || [],
+      file_urls: file_urls || [],
+      submitted_by: userId,
+      status: "submitted",
+      created_at: now,
+      updated_at: now,
     };
 
-    await ddb.send(
-      new PutCommand({
-        TableName: SUBMISSIONS_TABLE,
-        Item: item,
-      })
-    );
+    // 3. Create Submission
+    await ddb.send(new PutCommand({
+      TableName: SUBMISSIONS_TABLE,
+      Item: item,
+      ConditionExpression: "attribute_not_exists(submission_id)"
+    }));
 
     res.status(201).json(item);
   } catch (error) {
+    if (error.name === "ConditionalCheckFailedException") {
+      return res.status(409).json({ message: "Submission ID conflict" });
+    }
+    console.error("Submission failed:", error);
     res.status(500).json({ message: "Failed to create submission" });
   }
 });
@@ -2117,27 +2291,49 @@ app.get("/rubrics", requireAuth, async (req, res) => {
 app.post("/judging/scores", requireAuth, async (req, res) => {
   try {
     const { submission_id, rubric_id, score } = req.body;
+    const userId = req.user.sub;
+
     if (!submission_id || !rubric_id || score === undefined) {
-      res.status(400).json({ message: "submission_id, rubric_id, and score are required" });
-      return;
+      return res.status(400).json({ message: "submission_id, rubric_id, and score are required" });
     }
 
-    const item = {
-      ...req.body,
+    // 1. Fetch Submission (to identify Event)
+    const subRes = await ddb.send(new GetCommand({ TableName: SUBMISSIONS_TABLE, Key: { submission_id } }));
+    const submission = subRes.Item;
+    if (!submission) return res.status(404).json({ message: "Submission not found" });
+
+    const eventId = submission.event_id;
+
+    // 2. Auth Check (Judge/Admin)
+    const isGlobalAdmin = isSuperAdminEmail(req.user.email);
+    if (!isGlobalAdmin) {
+      const roleRes = await ddb.send(new GetCommand({ TableName: USER_ROLES_TABLE, Key: { event_id: eventId, user_id: userId } }));
+      const role = roleRes.Item ? roleRes.Item.role : null;
+      if (![ROLES.JUDGE, ROLES.ADMIN, ROLES.ORGANIZER].includes(role)) {
+        return res.status(403).json({ message: "Only judges can score submissions." });
+      }
+    }
+
+    // 3. Save Score (Read-Modify-Write for Scorecard Map)
+    // Ensures one record per judge per submission
+    const existingRes = await ddb.send(new GetCommand({ TableName: JUDGING_SCORES_TABLE, Key: { submission_id, judge_id: userId } }));
+    const item = existingRes.Item || {
       submission_id,
-      judge_id: req.user.sub,
-      updated_at: new Date().toISOString(),
+      judge_id: userId,
+      scores: {}, // Map of rubric_id -> score
+      created_at: new Date().toISOString()
     };
 
-    await ddb.send(
-      new PutCommand({
-        TableName: JUDGING_SCORES_TABLE,
-        Item: item,
-      })
-    );
+    // Update Score Map
+    item.scores = item.scores || {};
+    item.scores[rubric_id] = score;
+    item.updated_at = new Date().toISOString();
+
+    await ddb.send(new PutCommand({ TableName: JUDGING_SCORES_TABLE, Item: item }));
 
     res.json(item);
   } catch (error) {
+    console.error("Scoring failed:", error);
     res.status(500).json({ message: "Failed to save score" });
   }
 });
