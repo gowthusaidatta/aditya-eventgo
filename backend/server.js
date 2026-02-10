@@ -801,6 +801,55 @@ function cleanUpdateFields(fields) {
   return result;
 }
 
+const ALLOWED_USER_UPDATE_FIELDS = new Set([
+  "PK",
+  "SK",
+  "action",
+  "actor_id",
+  "allowedActions",
+  "completion_percent",
+  "createdAt",
+  "department",
+  "display_name",
+  "email",
+  "employee_id",
+  "full_name",
+  "grantedAt",
+  "grantedBy",
+  "GSI4PK",
+  "GSI4SK",
+  "ip_address",
+  "is_verified",
+  "phone",
+  "primary",
+  "profile_photo_url",
+  "resource_id",
+  "resource_type",
+  "role",
+  "roll_number",
+  "scope",
+  "status",
+  "success",
+  "type",
+  "updated_at",
+  "updatedAt",
+  "user_email",
+  "user_status",
+  "user_type",
+  "verification_status",
+  "year_of_study",
+]);
+
+function filterUserUpdateFields(payload) {
+  const result = {};
+  Object.entries(payload || {}).forEach(([key, value]) => {
+    if (ALLOWED_USER_UPDATE_FIELDS.has(key)) {
+      result[key] = value;
+    }
+  });
+  return result;
+}
+
 async function updateUserWithFallbackKey({ userId, update }) {
   try {
     return await ddb.send(
@@ -2091,9 +2140,7 @@ app.put("/users/:userId", requireAuth, async (req, res) => {
     });
     if (!ok) return;
     const now = new Date().toISOString();
-    const updatePayload = { ...req.body };
-    delete updatePayload.userId;
-    delete updatePayload.user_id;
+    const updatePayload = filterUserUpdateFields(req.body);
 
     const updateFields = cleanUpdateFields({
       ...updatePayload,
@@ -2228,9 +2275,7 @@ app.put("/users/me", requireAuth, async (req, res) => {
     if (!ok) return;
     const now = new Date().toISOString();
     const isSuperAdmin = isSuperAdminEmail(req.user.email);
-    const updatePayload = { ...req.body };
-    delete updatePayload.userId;
-    delete updatePayload.user_id;
+    const updatePayload = filterUserUpdateFields(req.body);
 
     const updateFields = cleanUpdateFields({
       ...updatePayload,
