@@ -303,6 +303,14 @@ function applyDefaults({ incoming, defaults, existing, omitFields = [] }) {
   return result;
 }
 
+function stripFields(source, fieldsToRemove) {
+  const result = { ...(source || {}) };
+  fieldsToRemove.forEach((field) => {
+    delete result[field];
+  });
+  return result;
+}
+
 async function updateUserWithFallbackKey({ userId, update }) {
   try {
     return await ddb.send(
@@ -1091,10 +1099,13 @@ app.put("/users/me", requireAuth, async (req, res) => {
       omitFields: ["userId", "user_id", "createdAt", "created_at", "updatedAt", "updated_at"],
     });
 
-    const updateFields = {
-      ...normalized,
-      updatedAt: now,
-    };
+    const updateFields = stripFields(
+      {
+        ...normalized,
+        updatedAt: now,
+      },
+      ["userId", "user_id", "createdAt", "created_at", "updatedAt", "updated_at"]
+    );
 
     if (isSuperAdmin) {
       updateFields.user_type = "admin";
@@ -1140,10 +1151,15 @@ app.put("/users/:userId", requireAuth, async (req, res) => {
       omitFields: ["userId", "user_id", "createdAt", "created_at", "updatedAt", "updated_at"],
     });
 
-    const update = buildUpdateExpression({
-      ...normalized,
-      updatedAt: now,
-    });
+    const update = buildUpdateExpression(
+      stripFields(
+        {
+          ...normalized,
+          updatedAt: now,
+        },
+        ["userId", "user_id", "createdAt", "created_at", "updatedAt", "updated_at"]
+      )
+    );
     if (!update) {
       res.status(400).json({ message: "No fields to update" });
       return;
