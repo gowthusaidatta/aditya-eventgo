@@ -2292,6 +2292,7 @@ app.put("/users/me", requireAuth, async (req, res) => {
     ]);
     res.json(data.Attributes || {});
   } catch (error) {
+    console.error("Update profile failed:", error?.name || "Error", error?.message || error);
     res.status(500).json({ message: "Failed to update user profile" });
   }
 });

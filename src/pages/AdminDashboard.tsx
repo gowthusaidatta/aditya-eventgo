@@ -1491,7 +1491,7 @@ export default function AdminDashboard() {
             <Card>
               <CardHeader>
                 <CardTitle>Role Permissions</CardTitle>
-                <CardDescription>Define default permissions for college roles</CardDescription>
+                <CardDescription>Set default permissions for each college role</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-2">
@@ -1550,70 +1550,41 @@ export default function AdminDashboard() {
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
-
-          {/* Permissions Tab */}
-          <TabsContent value="permissions" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Role Permissions</CardTitle>
-                <CardDescription>Set default permissions for each college role</CardDescription>
+                <CardTitle>User Permissions</CardTitle>
+                <CardDescription>Overrides assigned to individual users</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label>College Role</Label>
-                    <Select value={selectedRole} onValueChange={setSelectedRole}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {collegeRoleOptions.map((role) => (
-                          <SelectItem key={role.id} value={role.id}>
-                            {role.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+              <CardContent className="space-y-3">
+                {users.filter((entry) => (entry.permissions || []).length > 0).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No user-specific permissions found.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {users
+                      .filter((entry) => (entry.permissions || []).length > 0)
+                      .map((entry) => (
+                        <div
+                          key={entry.user_id || entry.userId || entry.email}
+                          className="rounded-lg border px-4 py-3"
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-medium">
+                              {entry.full_name || entry.email || "User"}
+                            </span>
+                            {entry.college_role && (
+                              <Badge variant="secondary">{roleLabel[entry.college_role] || entry.college_role}</Badge>
+                            )}
+                            {entry.email && <span className="text-xs text-muted-foreground">{entry.email}</span>}
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {(entry.permissions || []).map((perm) => (
+                              <Badge key={perm} variant="outline">{perm}</Badge>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
                   </div>
-                  <div className="flex items-end">
-                    <Button
-                      onClick={async () => {
-                        try {
-                          await apiClient.updateRolePermissions(selectedRole, rolePermissionsDraft);
-                          await fetchRolePermissions();
-                          toast({ title: "Permissions saved", description: "Role permissions updated." });
-                        } catch (error) {
-                          toast({ title: "Error", description: "Failed to save permissions", variant: "destructive" });
-                        }
-                      }}
-                      disabled={rolePermissionsLoading}
-                    >
-                      Save Role Permissions
-                    </Button>
-                  </div>
-                </div>
-                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {permissionOptions.map((option) => (
-                    <label key={option.id} className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4"
-                        checked={rolePermissionsDraft.includes(option.id)}
-                        onChange={(event) => {
-                          const next = new Set(rolePermissionsDraft);
-                          if (event.target.checked) {
-                            next.add(option.id);
-                          } else {
-                            next.delete(option.id);
-                          }
-                          setRolePermissionsDraft(Array.from(next));
-                        }}
-                      />
-                      {option.label}
-                    </label>
-                  ))}
-                </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

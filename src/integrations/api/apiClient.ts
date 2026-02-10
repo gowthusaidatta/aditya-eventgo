@@ -404,10 +404,7 @@ class ApiClient {
 
   async updateProfile(data: any) {
     try {
-      const response = await this.client.put(
-        "/users/me",
-        normalizePayload(data, USERS_DEFAULTS)
-      );
+      const response = await this.client.put("/users/me", data || {});
       return response.data;
     } catch (error) {
       console.error("Error updating profile:", error);
