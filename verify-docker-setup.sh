@@ -106,7 +106,7 @@ echo ""
 
 echo "5. CHECKING BUILD AUTOMATION"
 echo "============================="
-check_file "../Makefile" "Makefile with Docker Commands"
+check_file "Makefile" "Makefile with Docker Commands"
 echo ""
 
 echo "6. CHECKING PROJECT STRUCTURE"

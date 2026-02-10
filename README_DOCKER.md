@@ -47,7 +47,7 @@ make shell-backend   # Access backend terminal
 make db-local        # With local DynamoDB
 ```
 
-All make commands available in [Makefile](../Makefile).
+All make commands available in [Makefile](Makefile).
 
 ---
 
