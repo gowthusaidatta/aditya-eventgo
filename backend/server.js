@@ -258,7 +258,7 @@ async function requireAuth(req, res, next) {
       sub: payload.sub,
       email: payload.email,
       name: payload.name,
-      tenantId: getTenantIdFromPayload(payload),
+      tenantId: getTenantIdFromPayload(payload) || defaultTenantId,
       raw: payload,
     };
     next();
