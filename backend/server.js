@@ -788,6 +788,19 @@ function applyDefaults({ incoming, defaults, existing, omitFields = [] }) {
   return result;
 }
 
+function cleanUpdateFields(fields) {
+  const result = {};
+  Object.entries(fields || {}).forEach(([key, value]) => {
+    if (value === undefined) return;
+    if (typeof value === "string" && value.trim() === "") {
+      result[key] = null;
+      return;
+    }
+    result[key] = value;
+  });
+  return result;
+}
+
 async function updateUserWithFallbackKey({ userId, update }) {
   try {
     return await ddb.send(
@@ -2078,18 +2091,16 @@ app.put("/users/:userId", requireAuth, async (req, res) => {
     });
     if (!ok) return;
     const now = new Date().toISOString();
-    const existing = await getUserWithFallbackKey(req.params.userId);
-    const normalized = applyDefaults({
-      incoming: req.body,
-      defaults: USERS_DEFAULTS,
-      existing: existing.Item,
-      omitFields: ["userId", "user_id", "createdAt", "created_at", "updatedAt", "updated_at"],
-    });
+    const updatePayload = { ...req.body };
+    delete updatePayload.userId;
+    delete updatePayload.user_id;
 
-    const update = buildUpdateExpression({
-      ...normalized,
+    const updateFields = cleanUpdateFields({
+      ...updatePayload,
       updatedAt: now,
     });
+
+    const update = buildUpdateExpression(updateFields);
     if (!update) {
       res.status(400).json({ message: "No fields to update" });
       return;
@@ -2220,18 +2231,10 @@ app.put("/users/me", requireAuth, async (req, res) => {
     delete updatePayload.userId;
     delete updatePayload.user_id;
 
-    const existing = await getUserWithFallbackKey(userId);
-    const normalized = applyDefaults({
-      incoming: updatePayload,
-      defaults: USERS_DEFAULTS,
-      existing: existing.Item,
-      omitFields: ["userId", "user_id", "createdAt", "created_at", "updatedAt", "updated_at"],
-    });
-
-    const updateFields = {
-      ...normalized,
+    const updateFields = cleanUpdateFields({
+      ...updatePayload,
       updatedAt: now,
-    };
+    });
 
     if (isSuperAdmin) {
       updateFields.user_type = "admin";
@@ -2248,6 +2251,8 @@ app.put("/users/me", requireAuth, async (req, res) => {
 
     update.UpdateExpression = `${update.UpdateExpression}, #createdAt = if_not_exists(#createdAt, :createdAt)`;
     update.ExpressionAttributeNames["#createdAt"] = "createdAt";
+    const existing = await getUserWithFallbackKey(req.params.userId);
+    const existing = await getUserWithFallbackKey(userId);
     update.ExpressionAttributeValues[":createdAt"] =
       existing.Item?.createdAt || existing.Item?.created_at || req.body?.createdAt || now;
 
