@@ -12,11 +12,13 @@ import { useToast } from "@/hooks/use-toast";
 import { Plus, Trash2, Users, Shield, Search } from "lucide-react";
 
 interface EventPermission {
+  id?: string;
+  permission_id?: string;
   user_id: string;
-  role: string;
-  allowedActions?: string[];
-  granted_by?: string;
-  granted_at?: string;
+  permission_type: string;
+  granted_by: string;
+  granted_at: string;
+  is_active: boolean;
   user?: {
     full_name: string;
     email: string;
@@ -44,37 +46,8 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
   const [collegeUsers, setCollegeUsers] = useState<CollegeUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedEmail, setSelectedEmail] = useState("");
-  const [selectedUserId, setSelectedUserId] = useState("");
+  const [selectedUser, setSelectedUser] = useState("");
   const [selectedPermission, setSelectedPermission] = useState<string>("manage_registrations");
-
-  const permissionOptions = [
-    {
-      value: "manage_registrations",
-      label: "Manage Registrations",
-      actions: ["registrations:read", "registrations:update"],
-    },
-    {
-      value: "edit_event",
-      label: "Edit Event",
-      actions: ["events:update"],
-    },
-    {
-      value: "delete_event",
-      label: "Delete Event",
-      actions: ["events:delete"],
-    },
-    {
-      value: "grant_permissions",
-      label: "Grant Permissions",
-      actions: ["permissions:read", "permissions:grant", "permissions:revoke"],
-    },
-    {
-      value: "full_access",
-      label: "Full Access",
-      actions: ["events:update", "events:delete", "registrations:read", "registrations:update", "teams:read", "teams:update"],
-    },
-  ];
 
   useEffect(() => {
     fetchPermissions();
@@ -87,13 +60,13 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
       const items = Array.isArray(data) ? data : [];
 
       if (items.length > 0) {
-        const profiles = await apiClient.listUsers({ userType: "college" });
-        const profileList = Array.isArray(profiles) ? profiles : [];
+        const userIds = items.map(p => p.user_id).filter(Boolean);
+        const profiles = userIds.length > 0 ? await apiClient.getUsersByIds(userIds) : [];
 
         const enrichedPermissions = items.map(p => ({
           ...p,
-          id: p.user_id,
-          user: profileList.find(profile => (profile.user_id || profile.userId) === p.user_id),
+          id: p.permission_id || p.id,
+          user: profiles?.find(profile => profile.userId === p.user_id),
         }));
 
         setPermissions(enrichedPermissions);
@@ -125,15 +98,12 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
   };
 
   const grantPermission = async () => {
-    if (!selectedUserId || !user) return;
+    if (!selectedUser || !user) return;
 
     try {
-      const selectedPolicy = permissionOptions.find((opt) => opt.value === selectedPermission);
       await apiClient.request("POST", `/events/${eventId}/permissions`, {
-        user_id: selectedUserId,
-        email: selectedEmail,
-        role: selectedPermission,
-        allowedActions: selectedPolicy?.actions || [],
+        user_id: selectedUser,
+        permission_type: selectedPermission,
       });
 
       toast({
@@ -141,8 +111,7 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
         description: "User can now access this event",
       });
 
-      setSelectedEmail("");
-      setSelectedUserId("");
+      setSelectedUser("");
       fetchPermissions();
     } catch (error: any) {
       if (error?.response?.status === 409) {
@@ -162,16 +131,9 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
     }
   };
 
-  const revokePermission = async (userId: string, email?: string) => {
+  const revokePermission = async (permissionId: string) => {
     try {
-      await apiClient.request(
-        "DELETE",
-        `/events/${eventId}/permissions/${userId}`,
-        undefined,
-        {
-          params: { user_id: userId, email },
-        }
-      );
+      await apiClient.request("DELETE", `/events/${eventId}/permissions/${permissionId}`);
 
       toast({
         title: "Permission revoked",
@@ -195,8 +157,14 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
   );
 
   const getPermissionLabel = (type: string) => {
-    const match = permissionOptions.find((opt) => opt.value === type);
-    return match ? match.label : type;
+    switch (type) {
+      case "manage_registrations": return "Manage Registrations";
+      case "edit_event": return "Edit Event";
+      case "delete_event": return "Delete Event";
+      case "grant_permissions": return "Grant Permissions";
+      case "full_access": return "Full Access";
+      default: return type;
+    }
   };
 
   if (loading) {
@@ -237,12 +205,11 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
                       key={u.user_id}
                       type="button"
                       className={`w-full text-left px-3 py-2 text-sm hover:bg-muted ${
-                        selectedEmail === u.email ? "bg-muted" : ""
+                        selectedUser === u.user_id ? "bg-muted" : ""
                       }`}
                       onClick={() => {
-                          setSelectedEmail(u.email);
-                          setSelectedUserId(u.user_id || "");
-                          setSearchQuery(u.email);
+                        setSelectedUser(u.user_id);
+                        setSearchQuery(u.full_name);
                       }}
                     >
                       <div className="font-medium">{u.full_name}</div>
@@ -259,16 +226,16 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                    {permissionOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
+                  <SelectItem value="manage_registrations">Manage Registrations</SelectItem>
+                  <SelectItem value="edit_event">Edit Event</SelectItem>
+                  <SelectItem value="delete_event">Delete Event</SelectItem>
+                  <SelectItem value="grant_permissions">Grant Permissions</SelectItem>
+                  <SelectItem value="full_access">Full Access</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="flex items-end">
-                <Button onClick={grantPermission} disabled={!selectedUserId}>
+              <Button onClick={grantPermission} disabled={!selectedUser}>
                 <Plus className="h-4 w-4 mr-2" />
                 Grant
               </Button>
@@ -290,20 +257,20 @@ export function EventPermissionsManager({ eventId, eventTitle }: EventPermission
             <div className="space-y-2">
               {permissions.map((perm) => (
                 <div
-                  key={perm.user_id}
+                  key={perm.id || perm.permission_id}
                   className="flex items-center justify-between p-3 border rounded-lg"
                 >
                   <div className="flex items-center gap-3">
                     <div>
-                      <div className="font-medium">{perm.user?.full_name || perm.user_id || "Unknown"}</div>
-                      <div className="text-xs text-muted-foreground">{perm.user?.email || perm.user_id}</div>
+                      <div className="font-medium">{perm.user?.full_name || "Unknown"}</div>
+                      <div className="text-xs text-muted-foreground">{perm.user?.email}</div>
                     </div>
-                    <Badge variant="outline">{getPermissionLabel(perm.role)}</Badge>
+                    <Badge variant="outline">{getPermissionLabel(perm.permission_type)}</Badge>
                   </div>
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => revokePermission(perm.user_id, perm.user?.email)}
+                    onClick={() => revokePermission(perm.id || perm.permission_id || "")}
                   >
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>

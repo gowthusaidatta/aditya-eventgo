@@ -3,8 +3,6 @@ const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const crypto = require("crypto");
-const fs = require("fs");
-const path = require("path");
 const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
 const {
   DynamoDBDocumentClient,
@@ -29,33 +27,6 @@ const {
 } = require("@aws-sdk/client-cognito-identity-provider");
 const { createRemoteJWKSet, jwtVerify } = require("jose");
 const { validateEventPayload } = require("./validation");
-const { getRegistrationSchema, validateRegistrationFormData } = require("./eventSchemas");
-const { createAuthorizer, roleAllowMap } = require("./authorization");
-const {
-  buildTenantUserItem,
-  buildUserProfileItem,
-  buildEventItem,
-  buildEventConfigItem,
-  buildRegistrationItem,
-  buildTeamItem,
-  buildTeamMemberItem,
-  buildPermissionItem,
-  buildAuditItem,
-} = require("./data/access");
-const {
-  eventPk,
-  eventTeamSk,
-  eventRegSk,
-  teamPk,
-  teamMemberSk,
-  tenantPk,
-  tenantEventSk,
-  tenantUserSk,
-  userPk,
-  userProfileSk,
-  permissionSk,
-  gsi1Pk,
-} = require("./data/keys");
 
 const app = express();
 
@@ -77,12 +48,6 @@ const {
   NOTIFICATIONS_TABLE,
   CERTIFICATES_TABLE,
   EVENT_PERMISSIONS_TABLE,
-  PERMISSIONS_TABLE,
-  EVENTGO_MAIN_TABLE,
-  EVENTGO_DEFAULT_TENANT_ID,
-  EVENTGO_DUAL_WRITE,
-  ENABLE_LEGACY_FALLBACK,
-  LEGACY_FALLBACK_DISABLED_TENANTS,
   S3_BUCKET_NAME,
   S3_PUBLIC_BASE_URL,
   COGNITO_REGION,
@@ -98,30 +63,9 @@ const allowedOrigins = (CORS_ORIGINS || "")
   .map((value) => value.trim())
   .filter(Boolean);
 
-const trafficMetrics = { total: 0, assetRequests: 0 };
-
 app.use(helmet());
 app.use(morgan("combined"));
 app.use(express.json({ limit: "10mb" }));
-app.locals.assetGuardrails = true;
-app.use((req, res, next) => {
-  trafficMetrics.total += 1;
-  const path = req.path || "";
-  const isAssetRequest =
-    path.startsWith("/assets/") ||
-    /\.(png|jpg|jpeg|gif|webp|svg|ico|css|js|woff2?|ttf|eot)$/i.test(path);
-  if (isAssetRequest) {
-    trafficMetrics.assetRequests += 1;
-    console.warn(JSON.stringify({
-      type: "asset_request_blocked",
-      path,
-      method: req.method,
-    }));
-    res.status(404).json({ message: "Static assets are not served by the API" });
-    return;
-  }
-  next();
-});
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -144,18 +88,6 @@ const cognitoClient = COGNITO_REGION
   ? new CognitoIdentityProviderClient({ region: COGNITO_REGION })
   : null;
 
-const mainTableDisabled = process.env.EVENTGO_MAIN_TABLE_DISABLED === "true";
-const mainTable = mainTableDisabled ? null : EVENTGO_MAIN_TABLE || null;
-const defaultTenantId = EVENTGO_DEFAULT_TENANT_ID || "tenant_default";
-const dualWriteMain = !mainTableDisabled && EVENTGO_DUAL_WRITE !== "false";
-const legacyFallbackEnabled = ENABLE_LEGACY_FALLBACK === "true";
-const legacyFallbackDisabledTenants = (LEGACY_FALLBACK_DISABLED_TENANTS || "")
-  .split(",")
-  .map((value) => value.trim())
-  .filter(Boolean);
-const legacyFallbackCounters = {};
-const authMetrics = { authDeniedTotal: 0, tenantMismatchTotal: 0 };
-
 const issuer = COGNITO_REGION && COGNITO_USER_POOL_ID
   ? `https://cognito-idp.${COGNITO_REGION}.amazonaws.com/${COGNITO_USER_POOL_ID}`
   : null;
@@ -169,56 +101,6 @@ const superAdminEmails = (SUPER_ADMIN_EMAILS || "Datta@gmail.com")
 function isSuperAdminEmail(email) {
   if (!email) return false;
   return superAdminEmails.includes(email.toLowerCase());
-}
-
-function getRoleAllowedActions(role) {
-  if (!role) return [];
-  return roleAllowMap[role] || [];
-}
-
-const { authorize, writeAuditLog } = createAuthorizer({
-  ddb,
-  mainTable,
-  buildAuditItem,
-  isSuperAdminEmail,
-  metrics: authMetrics,
-});
-
-function getTenantIdFromPayload(payload) {
-  return (
-    payload?.tenant_id ||
-    payload?.tenantId ||
-    payload?.["custom:tenant_id"] ||
-    null
-  );
-}
-
-function isLegacyFallbackAllowed(tenantId) {
-  if (!legacyFallbackEnabled) return false;
-  if (!tenantId) return false;
-  return !legacyFallbackDisabledTenants.includes(tenantId);
-}
-
-function logLegacyFallback(req, reason) {
-  const tenantId = req?.tenantId || req?.user?.tenantId || defaultTenantId;
-  const userId = req?.user?.sub || null;
-  legacyFallbackCounters[tenantId] = (legacyFallbackCounters[tenantId] || 0) + 1;
-  if (process.env.NODE_ENV === "production") {
-    console.error("Legacy fallback used in production", {
-      tenantId,
-      userId,
-      reason,
-      endpoint: req?.originalUrl || req?.url,
-    });
-  }
-  console.warn(JSON.stringify({
-    type: "legacy_fallback",
-    tenantId,
-    userId,
-    endpoint: req?.originalUrl || req?.url,
-    reason,
-    at: new Date().toISOString(),
-  }));
 }
 
 async function verifyToken(token) {
@@ -259,7 +141,6 @@ async function requireAuth(req, res, next) {
       sub: payload.sub,
       email: payload.email,
       name: payload.name,
-      tenantId: getTenantIdFromPayload(payload) || defaultTenantId,
       raw: payload,
     };
     next();
@@ -267,7 +148,6 @@ async function requireAuth(req, res, next) {
     res.status(401).json({ message: "Invalid token" });
   }
 }
-
 
 function buildSecretHash(username) {
   if (!COGNITO_CLIENT_SECRET || !COGNITO_CLIENT_ID) {
@@ -277,15 +157,6 @@ function buildSecretHash(username) {
     .createHmac("sha256", COGNITO_CLIENT_SECRET)
     .update(`${username}${COGNITO_CLIENT_ID}`)
     .digest("base64");
-}
-
-function normalizeCognitoUsername(value) {
-  if (!value || typeof value !== "string") return value;
-  const trimmed = value.trim();
-  if (trimmed.includes("@")) {
-    return trimmed.toLowerCase();
-  }
-  return trimmed;
 }
 
 function ensureCognitoConfig(res) {
@@ -325,199 +196,6 @@ function buildUpdateExpression(item) {
   };
 }
 
-function resolveTenantIdFromPayload(payload, fallback) {
-  return (
-    payload?.tenant_id ||
-    payload?.tenantId ||
-    payload?.college_id ||
-    payload?.collegeId ||
-    fallback
-  );
-}
-
-function resolveTenantIdFromRequest(req, fallback) {
-  return resolveTenantIdFromPayload(req?.query || req?.body || {}, fallback);
-}
-
-function resolveTenantIdFromProfile(profile, fallback) {
-  return (
-    profile?.tenant_id ||
-    profile?.tenantId ||
-    profile?.college_id ||
-    profile?.collegeId ||
-    fallback
-  );
-}
-
-async function writeMainItem(item) {
-  if (!mainTable || !dualWriteMain) return;
-  try {
-    await ddb.send(
-      new PutCommand({
-        TableName: mainTable,
-        Item: item,
-      })
-    );
-  } catch (error) {
-    console.error("Main table write failed:", error?.name, error?.message);
-  }
-}
-
-async function deleteMainItem(key) {
-  if (!mainTable || !dualWriteMain) return;
-  try {
-    await ddb.send(
-      new DeleteCommand({
-        TableName: mainTable,
-        Key: key,
-      })
-    );
-  } catch (error) {
-    console.error("Main table delete failed:", error?.name, error?.message);
-  }
-}
-
-function parseIdFromSk(sk, prefix) {
-  if (!sk || typeof sk !== "string") return null;
-  const token = `${prefix}#`;
-  return sk.startsWith(token) ? sk.slice(token.length) : null;
-}
-
-function chunkArray(items, size) {
-  const result = [];
-  for (let i = 0; i < items.length; i += size) {
-    result.push(items.slice(i, i + size));
-  }
-  return result;
-}
-
-async function getMainEventById(tenantId, eventId) {
-  if (!mainTable) return null;
-  const data = await ddb.send(
-    new GetCommand({
-      TableName: mainTable,
-      Key: { PK: tenantPk(tenantId), SK: tenantEventSk(eventId) },
-    })
-  );
-  if (!data.Item) return null;
-  return { ...data.Item, eventId };
-}
-
-async function listMainEvents(tenantId) {
-  if (!mainTable) return null;
-  const data = await ddb.send(
-    new QueryCommand({
-      TableName: mainTable,
-      KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
-      ExpressionAttributeValues: {
-        ":pk": tenantPk(tenantId),
-        ":sk": "EVENT#",
-      },
-    })
-  );
-
-  return (data.Items || []).map((item) => ({
-    ...item,
-    eventId: parseIdFromSk(item.SK, "EVENT"),
-  }));
-}
-
-async function getMainUserProfile(userId) {
-  if (!mainTable) return null;
-  const data = await ddb.send(
-    new GetCommand({
-      TableName: mainTable,
-      Key: { PK: userPk(userId), SK: userProfileSk() },
-    })
-  );
-  return data.Item || null;
-}
-
-async function listMainTenantUsers(tenantId) {
-  if (!mainTable) return null;
-  const data = await ddb.send(
-    new QueryCommand({
-      TableName: mainTable,
-      KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
-      ExpressionAttributeValues: {
-        ":pk": tenantPk(tenantId),
-        ":sk": "USER#",
-      },
-    })
-  );
-  return data.Items || [];
-}
-
-async function getTenantPermissionCoverage(tenantId) {
-  if (!mainTable || !tenantId) return null;
-  const tenantUsers = await listMainTenantUsers(tenantId);
-  const userRecords = (tenantUsers || [])
-    .map((item) => ({
-      userId: parseIdFromSk(item.SK, "USER"),
-      email: item.user_email || null,
-      role: item.role || null,
-    }))
-    .filter((item) => item.userId);
-
-  if (userRecords.length === 0) {
-    return { tenantId, totalUsers: 0, missingPermissions: 0, missingUsers: [] };
-  }
-
-  const permissionKeys = userRecords.map((record) => ({
-    PK: userPk(record.userId),
-    SK: permissionSk(`TENANT#${tenantId}`),
-  }));
-
-  const permissionItems = [];
-  for (const chunk of chunkArray(permissionKeys, 100)) {
-    const batch = await ddb.send(
-      new BatchGetCommand({
-        RequestItems: {
-          [mainTable]: {
-            Keys: chunk,
-            ConsistentRead: true,
-          },
-        },
-      })
-    );
-    const items = batch.Responses?.[mainTable] || [];
-    permissionItems.push(...items);
-  }
-
-  const permissionSet = new Set(
-    permissionItems.map((item) => `${item.PK}#${item.SK}`)
-  );
-
-  const missingUsers = userRecords.filter(
-    (record) => !permissionSet.has(`${userPk(record.userId)}#${permissionSk(`TENANT#${tenantId}`)}`)
-  );
-
-  return {
-    tenantId,
-    totalUsers: userRecords.length,
-    missingPermissions: missingUsers.length,
-    missingUsers,
-  };
-}
-
-function normalizeEmail(value) {
-  if (!value || typeof value !== "string") return null;
-  const trimmed = value.trim().toLowerCase();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-async function resolveEmailByUserId(userId) {
-  if (!userId) return null;
-  if (!USERS_TABLE) return null;
-  try {
-    const data = await getUserWithFallbackKey(userId);
-    const email = normalizeEmail(data.Item?.email);
-    return email;
-  } catch (error) {
-    return null;
-  }
-}
-
 const USERS_DEFAULTS = {
   full_name: "",
   email: "",
@@ -537,7 +215,6 @@ const USERS_DEFAULTS = {
 const EVENTS_DEFAULTS = {
   title: "",
   description: "",
-  short_description: "",
   full_description: "",
   event_type: "",
   start_date: "",
@@ -551,20 +228,16 @@ const EVENTS_DEFAULTS = {
   is_featured: false,
   mode: "offline",
   status: "draft",
-  participation_type: "individual",
-  difficulty_level: "Beginner",
   registration_deadline: "",
   registration_fee: 0,
   waitlist_enabled: false,
   waitlist_count: 0,
   tags: [],
-  skills: [],
   venue_details: {},
   online_link: "",
   is_hackathon: false,
   team_size_min: 1,
   team_size_max: 1,
-  event_config: {},
   prizes: [],
   sponsors: [],
   faqs: [],
@@ -585,168 +258,6 @@ const OPPORTUNITIES_DEFAULTS = {
   tags: [],
   created_by: "",
 };
-
-const DEFAULT_EVENT_PERMISSION_ACTIONS = [
-  "events:update",
-  "events:delete",
-  "registrations:read",
-  "registrations:update",
-  "teams:read",
-  "teams:update",
-  "submissions:read",
-  "rubrics:read",
-  "judging:read",
-];
-
-const ASSET_ROOT = process.env.ASSET_ROOT || "/var/www/assets";
-const FRONTEND_BUILD_ROOT = process.env.FRONTEND_BUILD_ROOT || "/var/www/frontend";
-const ASSET_SIZE_LIMITS = {
-  logos: 50 * 1024,
-  thumbnails: 50 * 1024,
-  banners: 200 * 1024,
-};
-const ASSET_REJECTION_LIMIT = 200;
-const assetRejections = [];
-let lastAssetUploadAt = null;
-
-function getAssetCategoryFromPath(filePath) {
-  const normalized = filePath.replace(/\\/g, "/");
-  if (normalized.includes("/logos/")) return "logos";
-  if (normalized.includes("/thumbnails/")) return "thumbnails";
-  if (normalized.includes("/banners/")) return "banners";
-  return "banners";
-}
-
-function getAssetSizeLimit(category) {
-  return ASSET_SIZE_LIMITS[category] || ASSET_SIZE_LIMITS.banners;
-}
-
-async function logAssetRejection(req, reason, details = {}) {
-  const entry = {
-    reason,
-    details,
-    at: new Date().toISOString(),
-  };
-  assetRejections.push(entry);
-  if (assetRejections.length > ASSET_REJECTION_LIMIT) {
-    assetRejections.shift();
-  }
-  console.warn(JSON.stringify({ type: "asset_rejected", ...entry }));
-  if (req?.user?.tenantId) {
-    await writeAuditLog({
-      req,
-      tenantId: req.user.tenantId,
-      action: "assets:reject",
-      resourceType: "asset",
-      resourceId: details?.fileName || null,
-      success: false,
-    });
-  }
-}
-
-function listFilesRecursiveSync(rootDir) {
-  if (!fs.existsSync(rootDir)) return [];
-  const entries = fs.readdirSync(rootDir, { withFileTypes: true });
-  const results = [];
-  entries.forEach((entry) => {
-    const fullPath = path.join(rootDir, entry.name);
-    if (entry.isDirectory()) {
-      results.push(...listFilesRecursiveSync(fullPath));
-    } else {
-      results.push(fullPath);
-    }
-  });
-  return results;
-}
-
-async function listFilesRecursive(rootDir) {
-  const results = [];
-  async function walk(current) {
-    let entries = [];
-    try {
-      entries = await fs.promises.readdir(current, { withFileTypes: true });
-    } catch (error) {
-      return;
-    }
-    for (const entry of entries) {
-      const fullPath = path.join(current, entry.name);
-      if (entry.isDirectory()) {
-        await walk(fullPath);
-      } else {
-        results.push(fullPath);
-      }
-    }
-  }
-  await walk(rootDir);
-  return results;
-}
-
-function assertAssetGuardrails() {
-  if (process.env.NODE_ENV !== "production") return;
-  if (!fs.existsSync(ASSET_ROOT)) {
-    throw new Error("ASSET_ROOT is missing");
-  }
-  if (!fs.existsSync(FRONTEND_BUILD_ROOT)) {
-    throw new Error("FRONTEND_BUILD_ROOT is missing");
-  }
-  const assetFiles = listFilesRecursiveSync(ASSET_ROOT);
-  const disallowedAssets = assetFiles.filter((filePath) => {
-    const ext = path.extname(filePath).toLowerCase();
-    return ext !== ".webp" && ext !== ".json" && ext !== ".txt";
-  });
-  if (disallowedAssets.length > 0) {
-    throw new Error("Non-WebP assets detected in ASSET_ROOT");
-  }
-  const frontendFiles = listFilesRecursiveSync(FRONTEND_BUILD_ROOT);
-  const bundledImages = frontendFiles.filter((filePath) => {
-    const ext = path.extname(filePath).toLowerCase();
-    if (filePath.replace(/\\/g, "/").includes("/icons/")) {
-      return false;
-    }
-    return [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"].includes(ext);
-  });
-  if (bundledImages.length > 0) {
-    throw new Error("Frontend build contains bundled images");
-  }
-  if (!app.locals.assetGuardrails) {
-    throw new Error("Asset guardrail middleware is not initialized");
-  }
-}
-
-async function getAssetHealthReport() {
-  const files = await listFilesRecursive(ASSET_ROOT);
-  let total = 0;
-  const nonWebp = [];
-  const oversize = [];
-  let lastUpload = lastAssetUploadAt ? new Date(lastAssetUploadAt) : null;
-
-  for (const filePath of files) {
-    const ext = path.extname(filePath).toLowerCase();
-    const stats = await fs.promises.stat(filePath);
-    total += 1;
-
-    if (ext !== ".webp") {
-      nonWebp.push(filePath);
-    }
-
-    const category = getAssetCategoryFromPath(filePath);
-    const limit = getAssetSizeLimit(category);
-    if (stats.size > limit) {
-      oversize.push({ path: filePath, size: stats.size, limit });
-    }
-
-    if (!lastUpload || stats.mtime > lastUpload) {
-      lastUpload = stats.mtime;
-    }
-  }
-
-  return {
-    total_assets: total,
-    non_webp_assets: nonWebp,
-    oversize_assets: oversize,
-    last_upload_time: lastUpload ? lastUpload.toISOString() : null,
-  };
-}
 
 function cloneDefault(value) {
   if (Array.isArray(value)) return [...value];
@@ -786,68 +297,6 @@ function applyDefaults({ incoming, defaults, existing, omitFields = [] }) {
     }
   });
 
-  return result;
-}
-
-function cleanUpdateFields(fields) {
-  const result = {};
-  Object.entries(fields || {}).forEach(([key, value]) => {
-    if (value === undefined) return;
-    if (typeof value === "string" && value.trim() === "") {
-      result[key] = null;
-      return;
-    }
-    result[key] = value;
-  });
-  return result;
-}
-
-const ALLOWED_USER_UPDATE_FIELDS = new Set([
-  "PK",
-  "SK",
-  "action",
-  "actor_id",
-  "allowedActions",
-  "completion_percent",
-  "createdAt",
-  "department",
-  "display_name",
-  "email",
-  "employee_id",
-  "full_name",
-  "grantedAt",
-  "grantedBy",
-  "GSI4PK",
-  "GSI4SK",
-  "ip_address",
-  "is_verified",
-  "phone",
-  "primary",
-  "profile_photo_url",
-  "resource_id",
-  "resource_type",
-  "role",
-  "roll_number",
-  "scope",
-  "status",
-  "success",
-  "type",
-  "updated_at",
-  "updatedAt",
-  "user_email",
-  "user_status",
-  "user_type",
-  "verification_status",
-  "year_of_study",
-]);
-
-function filterUserUpdateFields(payload) {
-  const result = {};
-  Object.entries(payload || {}).forEach(([key, value]) => {
-    if (ALLOWED_USER_UPDATE_FIELDS.has(key)) {
-      result[key] = value;
-    }
-  });
   return result;
 }
 
@@ -921,121 +370,6 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-app.get("/admin/legacy-fallback", requireAuth, async (req, res) => {
-  const ok = await authorize({ req }, "admin:read", {
-    tenantId: req.user?.tenantId,
-    type: "admin",
-    id: "legacy-fallback",
-  });
-  if (!ok) return;
-  await writeAuditLog({
-    req,
-    tenantId: req.user?.tenantId || null,
-    action: "admin:read",
-    resourceType: "admin",
-    resourceId: "legacy-fallback",
-    success: true,
-  });
-  res.json({
-    legacy_fallback_reads_total: legacyFallbackCounters,
-    auth_denied_total: authMetrics.authDeniedTotal,
-    tenant_mismatch_total: authMetrics.tenantMismatchTotal,
-  });
-});
-
-app.get("/admin/permissions/health", requireAuth, async (req, res) => {
-  try {
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "admin:read", {
-      tenantId,
-      type: "admin",
-      id: "permissions-health",
-    });
-    if (!ok) return;
-
-    if (!mainTable) {
-      res.status(500).json({ message: "EVENTGO_MAIN_TABLE is not configured" });
-      return;
-    }
-
-    const report = await getTenantPermissionCoverage(tenantId);
-    await writeAuditLog({
-      req,
-      tenantId,
-      action: "admin:read",
-      resourceType: "admin",
-      resourceId: "permissions-health",
-      success: true,
-    });
-    res.json(report);
-  } catch (error) {
-    res.status(500).json({ message: "Failed to fetch permissions health" });
-  }
-});
-
-app.get("/admin/traffic/health", requireAuth, async (req, res) => {
-  try {
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "admin:read", {
-      tenantId,
-      type: "admin",
-      id: "traffic-health",
-    });
-    if (!ok) return;
-
-    const total = trafficMetrics.total || 0;
-    const assetRequests = trafficMetrics.assetRequests || 0;
-    const assetRatio = total > 0 ? assetRequests / total : 0;
-
-    await writeAuditLog({
-      req,
-      tenantId,
-      action: "admin:read",
-      resourceType: "admin",
-      resourceId: "traffic-health",
-      success: true,
-    });
-
-    res.json({
-      total_requests: total,
-      asset_requests: assetRequests,
-      asset_request_ratio: assetRatio,
-      expected_asset_request_ratio_max: 0.1,
-    });
-  } catch (error) {
-    res.status(500).json({ message: "Failed to fetch traffic health" });
-  }
-});
-
-app.get("/admin/assets/health", requireAuth, async (req, res) => {
-  try {
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "admin:read", {
-      tenantId,
-      type: "admin",
-      id: "assets-health",
-    });
-    if (!ok) return;
-
-    const report = await getAssetHealthReport();
-    await writeAuditLog({
-      req,
-      tenantId,
-      action: "admin:read",
-      resourceType: "admin",
-      resourceId: "assets-health",
-      success: true,
-    });
-
-    res.json({
-      ...report,
-      recent_rejections: assetRejections,
-    });
-  } catch (error) {
-    res.status(500).json({ message: "Failed to fetch assets health" });
-  }
-});
-
 app.post("/auth/login", async (req, res) => {
   if (!ensureCognitoConfig(res)) return;
 
@@ -1044,8 +378,8 @@ app.post("/auth/login", async (req, res) => {
     res.status(400).json({ message: "Username and password are required" });
     return;
   }
-  const normalizedUsername = normalizeCognitoUsername(username);
-  const secretHash = buildSecretHash(normalizedUsername);
+
+  const secretHash = buildSecretHash(username);
 
   try {
     const response = await cognitoClient.send(
@@ -1053,7 +387,7 @@ app.post("/auth/login", async (req, res) => {
         ClientId: COGNITO_CLIENT_ID,
         AuthFlow: "USER_PASSWORD_AUTH",
         AuthParameters: {
-          USERNAME: normalizedUsername,
+          USERNAME: username,
           PASSWORD: password,
           ...(secretHash ? { SECRET_HASH: secretHash } : {}),
         },
@@ -1091,12 +425,13 @@ app.post("/auth/refresh", async (req, res) => {
     res.status(400).json({ message: "Refresh token is required" });
     return;
   }
-  const normalizedUsername = normalizeCognitoUsername(username);
-  if (COGNITO_CLIENT_SECRET && !normalizedUsername) {
+
+  if (COGNITO_CLIENT_SECRET && !username) {
     res.status(400).json({ message: "Username is required for token refresh" });
     return;
   }
-  const secretHash = normalizedUsername ? buildSecretHash(normalizedUsername) : undefined;
+
+  const secretHash = username ? buildSecretHash(username) : undefined;
 
   try {
     const response = await cognitoClient.send(
@@ -1105,7 +440,7 @@ app.post("/auth/refresh", async (req, res) => {
         AuthFlow: "REFRESH_TOKEN_AUTH",
         AuthParameters: {
           REFRESH_TOKEN: refreshToken,
-          ...(normalizedUsername ? { USERNAME: normalizedUsername } : {}),
+          ...(username ? { USERNAME: username } : {}),
           ...(secretHash ? { SECRET_HASH: secretHash } : {}),
         },
       })
@@ -1133,9 +468,9 @@ app.post("/auth/signup", async (req, res) => {
     res.status(400).json({ message: "Email and password are required" });
     return;
   }
-  const normalizedEmail = normalizeCognitoUsername(email);
-  const secretHash = buildSecretHash(normalizedEmail);
-  const attributes = [{ Name: "email", Value: normalizedEmail }];
+
+  const secretHash = buildSecretHash(email);
+  const attributes = [{ Name: "email", Value: email }];
   if (name) attributes.push({ Name: "name", Value: name });
   if (phone) attributes.push({ Name: "phone_number", Value: phone });
 
@@ -1143,7 +478,7 @@ app.post("/auth/signup", async (req, res) => {
     const response = await cognitoClient.send(
       new SignUpCommand({
         ClientId: COGNITO_CLIENT_ID,
-        Username: normalizedEmail,
+        Username: email,
         Password: password,
         UserAttributes: attributes,
         ...(secretHash ? { SecretHash: secretHash } : {}),
@@ -1170,14 +505,14 @@ app.post("/auth/confirm-signup", async (req, res) => {
     res.status(400).json({ message: "Username and code are required" });
     return;
   }
-  const normalizedUsername = normalizeCognitoUsername(username);
-  const secretHash = buildSecretHash(normalizedUsername);
+
+  const secretHash = buildSecretHash(username);
 
   try {
     await cognitoClient.send(
       new ConfirmSignUpCommand({
         ClientId: COGNITO_CLIENT_ID,
-        Username: normalizedUsername,
+        Username: username,
         ConfirmationCode: code,
         ...(secretHash ? { SecretHash: secretHash } : {}),
       })
@@ -1198,14 +533,14 @@ app.post("/auth/resend-confirmation", async (req, res) => {
     res.status(400).json({ message: "Username is required" });
     return;
   }
-  const normalizedUsername = normalizeCognitoUsername(username);
-  const secretHash = buildSecretHash(normalizedUsername);
+
+  const secretHash = buildSecretHash(username);
 
   try {
     const response = await cognitoClient.send(
       new ResendConfirmationCodeCommand({
         ClientId: COGNITO_CLIENT_ID,
-        Username: normalizedUsername,
+        Username: username,
         ...(secretHash ? { SecretHash: secretHash } : {}),
       })
     );
@@ -1225,14 +560,14 @@ app.post("/auth/forgot-password", async (req, res) => {
     res.status(400).json({ message: "Username is required" });
     return;
   }
-  const normalizedUsername = normalizeCognitoUsername(username);
-  const secretHash = buildSecretHash(normalizedUsername);
+
+  const secretHash = buildSecretHash(username);
 
   try {
     const response = await cognitoClient.send(
       new ForgotPasswordCommand({
         ClientId: COGNITO_CLIENT_ID,
-        Username: normalizedUsername,
+        Username: username,
         ...(secretHash ? { SecretHash: secretHash } : {}),
       })
     );
@@ -1252,14 +587,14 @@ app.post("/auth/confirm-forgot-password", async (req, res) => {
     res.status(400).json({ message: "Username, code, and new password are required" });
     return;
   }
-  const normalizedUsername = normalizeCognitoUsername(username);
-  const secretHash = buildSecretHash(normalizedUsername);
+
+  const secretHash = buildSecretHash(username);
 
   try {
     await cognitoClient.send(
       new ConfirmForgotPasswordCommand({
         ClientId: COGNITO_CLIENT_ID,
-        Username: normalizedUsername,
+        Username: username,
         ConfirmationCode: code,
         Password: newPassword,
         ...(secretHash ? { SecretHash: secretHash } : {}),
@@ -1276,105 +611,6 @@ app.post("/auth/confirm-forgot-password", async (req, res) => {
 app.get("/events", async (req, res) => {
   try {
     const { type, status, featured, limit, createdBy, isHackathon } = req.query;
-    const tenantId = resolveTenantIdFromRequest(req, defaultTenantId);
-    const applyFilters = (items) => {
-      let filtered = items || [];
-
-      if (type) {
-        filtered = filtered.filter((item) => item.event_type === type);
-      }
-      if (status) {
-        filtered = filtered.filter((item) => item.status === status);
-      }
-      if (featured !== undefined) {
-        const isFeatured = featured === "true";
-        filtered = filtered.filter((item) => Boolean(item.is_featured) === isFeatured);
-      }
-      if (createdBy) {
-        filtered = filtered.filter((item) => item.created_by === createdBy);
-      }
-      if (isHackathon !== undefined) {
-        const flag = isHackathon === "true";
-        filtered = filtered.filter((item) => Boolean(item.is_hackathon) === flag);
-      }
-
-      return filtered;
-    };
-
-    if (mainTable) {
-      const items = await listMainEvents(tenantId);
-      let filtered = applyFilters(items);
-
-      if (isLegacyFallbackAllowed(tenantId) && EVENTS_TABLE) {
-        const params = {
-          TableName: EVENTS_TABLE,
-          Limit: limit ? Number(limit) : undefined,
-        };
-
-        if (type || status || featured || createdBy || isHackathon !== undefined) {
-          const filters = [];
-          const values = {};
-          const names = {};
-
-          if (type) {
-            filters.push("#event_type = :event_type");
-            values[":event_type"] = type;
-            names["#event_type"] = "event_type";
-          }
-
-          if (status) {
-            filters.push("#status = :status");
-            values[":status"] = status;
-            names["#status"] = "status";
-          }
-
-          if (featured !== undefined) {
-            filters.push("#is_featured = :is_featured");
-            values[":is_featured"] = featured === "true";
-            names["#is_featured"] = "is_featured";
-          }
-
-          if (createdBy) {
-            filters.push("#created_by = :created_by");
-            values[":created_by"] = createdBy;
-            names["#created_by"] = "created_by";
-          }
-
-          if (isHackathon !== undefined) {
-            filters.push("#is_hackathon = :is_hackathon");
-            values[":is_hackathon"] = isHackathon === "true";
-            names["#is_hackathon"] = "is_hackathon";
-          }
-
-          params.FilterExpression = filters.join(" AND ");
-          params.ExpressionAttributeValues = values;
-          params.ExpressionAttributeNames = names;
-        }
-
-        const legacyData = await ddb.send(new ScanCommand(params));
-        const legacyItems = applyFilters(legacyData.Items || []);
-        const merged = new Map();
-        filtered.forEach((item) => merged.set(item.eventId || item.event_id, item));
-        legacyItems.forEach((item) => {
-          const key = item.eventId || item.event_id;
-          if (key) merged.set(key, item);
-        });
-        filtered = Array.from(merged.values());
-      }
-
-      if (limit) {
-        filtered = filtered.slice(0, Number(limit));
-      }
-
-      res.json(filtered);
-      return;
-    }
-
-    if (!isLegacyFallbackAllowed(tenantId)) {
-      res.status(403).json({ message: "Legacy fallback disabled" });
-      return;
-    }
-    logLegacyFallback(req, "events_list");
 
     const params = {
       TableName: EVENTS_TABLE,
@@ -1430,24 +666,6 @@ app.get("/events", async (req, res) => {
 
 app.get("/events/:eventId", async (req, res) => {
   try {
-    const tenantId = resolveTenantIdFromRequest(req, defaultTenantId);
-    if (mainTable) {
-      const eventItem = await getMainEventById(tenantId, req.params.eventId);
-      if (eventItem) {
-        res.json({
-          ...eventItem,
-          schedule: [],
-        });
-        return;
-      }
-    }
-
-    if (!isLegacyFallbackAllowed(tenantId)) {
-      res.status(403).json({ message: "Legacy fallback disabled" });
-      return;
-    }
-    logLegacyFallback(req, "events_detail");
-
     const data = await ddb.send(
       new GetCommand({
         TableName: EVENTS_TABLE,
@@ -1481,54 +699,8 @@ app.get("/events/:eventId", async (req, res) => {
   }
 });
 
-app.get("/events/:eventId/schema", async (req, res) => {
-  try {
-    const tenantId = resolveTenantIdFromRequest(req, defaultTenantId);
-    if (mainTable) {
-      const eventItem = await getMainEventById(tenantId, req.params.eventId);
-      if (eventItem) {
-        res.json({
-          event: eventItem,
-          registration_schema: getRegistrationSchema(eventItem),
-        });
-        return;
-      }
-    }
-
-    if (!isLegacyFallbackAllowed(tenantId)) {
-      res.status(403).json({ message: "Legacy fallback disabled" });
-      return;
-    }
-    logLegacyFallback(req, "events_schema");
-
-    const data = await ddb.send(
-      new GetCommand({
-        TableName: EVENTS_TABLE,
-        Key: { eventId: req.params.eventId },
-      })
-    );
-    if (!data.Item) {
-      res.status(404).json({ message: "Event not found" });
-      return;
-    }
-
-    res.json({
-      event: data.Item,
-      registration_schema: getRegistrationSchema(data.Item),
-    });
-  } catch (error) {
-    res.status(500).json({ message: "Failed to fetch event schema" });
-  }
-});
-
 app.post("/events", requireAuth, async (req, res) => {
   try {
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "events:create", {
-      tenantId,
-      type: "event",
-    });
-    if (!ok) return;
     const errors = validateEventPayload(req.body || {});
     if (errors.length > 0) {
       res.status(400).json({ message: "Validation failed", errors });
@@ -1548,7 +720,6 @@ app.post("/events", requireAuth, async (req, res) => {
       eventId,
       createdAt: req.body.createdAt || now,
       updatedAt: now,
-      created_by: req.user.sub,
     };
 
     await ddb.send(
@@ -1558,50 +729,6 @@ app.post("/events", requireAuth, async (req, res) => {
       })
     );
 
-    const configVersion = req.body.config_version || now;
-    await Promise.all([
-      writeMainItem(
-        buildEventItem(tenantId, eventId, {
-          title: item.title || null,
-          short_description: item.short_description || item.description || null,
-          full_description: item.full_description || null,
-          event_type: item.event_type || null,
-          mode: item.mode || null,
-          location: item.location || null,
-          start_at: item.start_date || null,
-          end_at: item.end_date || null,
-          registration_deadline: item.registration_deadline || null,
-          banner_url: item.image_url || null,
-          promo_video_url: item.video_url || null,
-          visibility: item.visibility || "public",
-          participation_type: item.participation_type || (item.team_size_max > 1 ? "team" : "individual"),
-          tags: item.tags || [],
-          skills: item.skills || [],
-          difficulty_level: item.difficulty_level || null,
-          status: item.status || "draft",
-          created_by: item.created_by || null,
-          created_at: item.createdAt || now,
-          updated_at: item.updatedAt || now,
-        })
-      ),
-      writeMainItem(
-        buildEventConfigItem(eventId, configVersion, {
-          event_config: item.event_config || null,
-          created_at: now,
-          created_by: item.created_by || null,
-        })
-      ),
-    ]);
-
-    await writeAuditLog({
-      req,
-      tenantId,
-      action: "events:create",
-      resourceType: "event",
-      resourceId: eventId,
-      success: true,
-    });
-
     res.status(201).json(item);
   } catch (error) {
     res.status(500).json({ message: "Failed to create event" });
@@ -1610,15 +737,6 @@ app.post("/events", requireAuth, async (req, res) => {
 
 app.put("/events/:eventId", requireAuth, async (req, res) => {
   try {
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "events:update", {
-      tenantId,
-      eventId: req.params.eventId,
-      requireEventTenantCheck: true,
-      type: "event",
-      id: req.params.eventId,
-    });
-    if (!ok) return;
     const errors = validateEventPayload(req.body || {});
     if (errors.length > 0) {
       res.status(400).json({ message: "Validation failed", errors });
@@ -1665,51 +783,6 @@ app.put("/events/:eventId", requireAuth, async (req, res) => {
       })
     );
 
-    const updated = data.Attributes || {};
-    const configVersion = req.body.config_version || now;
-    await Promise.all([
-      writeMainItem(
-        buildEventItem(tenantId, req.params.eventId, {
-          title: updated.title || null,
-          short_description: updated.short_description || updated.description || null,
-          full_description: updated.full_description || null,
-          event_type: updated.event_type || null,
-          mode: updated.mode || null,
-          location: updated.location || null,
-          start_at: updated.start_date || null,
-          end_at: updated.end_date || null,
-          registration_deadline: updated.registration_deadline || null,
-          banner_url: updated.image_url || null,
-          promo_video_url: updated.video_url || null,
-          visibility: updated.visibility || "public",
-          participation_type: updated.participation_type || (updated.team_size_max > 1 ? "team" : "individual"),
-          tags: updated.tags || [],
-          skills: updated.skills || [],
-          difficulty_level: updated.difficulty_level || null,
-          status: updated.status || "draft",
-          created_by: updated.created_by || null,
-          created_at: updated.createdAt || now,
-          updated_at: updated.updatedAt || now,
-        })
-      ),
-      writeMainItem(
-        buildEventConfigItem(req.params.eventId, configVersion, {
-          event_config: updated.event_config || null,
-          created_at: now,
-          created_by: updated.created_by || null,
-        })
-      ),
-    ]);
-
-    await writeAuditLog({
-      req,
-      tenantId,
-      action: "events:update",
-      resourceType: "event",
-      resourceId: req.params.eventId,
-      success: true,
-    });
-
     res.json(data.Attributes || {});
   } catch (error) {
     res.status(500).json({ message: "Failed to update event" });
@@ -1718,33 +791,12 @@ app.put("/events/:eventId", requireAuth, async (req, res) => {
 
 app.delete("/events/:eventId", requireAuth, async (req, res) => {
   try {
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "events:delete", {
-      tenantId,
-      eventId: req.params.eventId,
-      requireEventTenantCheck: true,
-      type: "event",
-      id: req.params.eventId,
-    });
-    if (!ok) return;
     await ddb.send(
       new DeleteCommand({
         TableName: EVENTS_TABLE,
         Key: { eventId: req.params.eventId },
       })
     );
-    await deleteMainItem({
-      PK: tenantPk(tenantId),
-      SK: tenantEventSk(req.params.eventId),
-    });
-    await writeAuditLog({
-      req,
-      tenantId,
-      action: "events:delete",
-      resourceType: "event",
-      resourceId: req.params.eventId,
-      success: true,
-    });
     res.status(204).end();
   } catch (error) {
     res.status(500).json({ message: "Failed to delete event" });
@@ -1784,12 +836,6 @@ app.get("/opportunities/:oppId", async (req, res) => {
 
 app.post("/opportunities", requireAuth, async (req, res) => {
   try {
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "opportunities:create", {
-      tenantId,
-      type: "opportunity",
-    });
-    if (!ok) return;
     const oppId = req.body.oppId || `opp_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
@@ -1820,13 +866,6 @@ app.post("/opportunities", requireAuth, async (req, res) => {
 
 app.put("/opportunities/:oppId", requireAuth, async (req, res) => {
   try {
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "opportunities:update", {
-      tenantId,
-      type: "opportunity",
-      id: req.params.oppId,
-    });
-    if (!ok) return;
     const now = new Date().toISOString();
     const existing = await ddb.send(
       new GetCommand({
@@ -1871,13 +910,6 @@ app.put("/opportunities/:oppId", requireAuth, async (req, res) => {
 
 app.delete("/opportunities/:oppId", requireAuth, async (req, res) => {
   try {
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "opportunities:delete", {
-      tenantId,
-      type: "opportunity",
-      id: req.params.oppId,
-    });
-    if (!ok) return;
     await ddb.send(
       new DeleteCommand({
         TableName: OPPORTUNITIES_TABLE,
@@ -1894,50 +926,15 @@ app.get("/users/me", requireAuth, async (req, res) => {
   try {
     res.set("Cache-Control", "no-store");
     const userId = req.user.sub;
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "users:read", {
-      tenantId,
-      ownerId: userId,
-      ownerActions: ["users:read"],
-      type: "user",
-      id: userId,
-    });
-    if (!ok) return;
-    const mainProfile = await getMainUserProfile(userId);
-    let existing = mainProfile ? { userId, ...mainProfile } : null;
-    if (!existing && mainTable) {
-      const now = new Date().toISOString();
-      const fallbackName = req.user.name || req.user.email || req.user.raw?.username || req.user.sub;
-      const seedProfile = {
-        email: req.user.email || null,
-        full_name: fallbackName,
-        user_type: "student",
-        is_verified: false,
-        createdAt: now,
-        updatedAt: now,
-      };
-      await writeMainItem(buildUserProfileItem(userId, seedProfile));
-      existing = { userId, ...seedProfile };
-    }
-    if (!existing && USERS_TABLE) {
-      if (!isLegacyFallbackAllowed(tenantId)) {
-        res.status(403).json({ message: "Legacy fallback disabled" });
-        return;
-      }
-      logLegacyFallback(req, "users_me");
-      const data = await ddb.send(
-        new GetCommand({
-          TableName: USERS_TABLE,
-          Key: { userId },
-          ConsistentRead: true,
-        })
-      );
-      existing = data.Item || {};
-    }
-    if (!existing) existing = { userId };
+    const data = await ddb.send(
+      new GetCommand({
+        TableName: USERS_TABLE,
+        Key: { userId },
+      })
+    );
+    const existing = data.Item || {};
     const now = new Date().toISOString();
     const isSuperAdmin = isSuperAdminEmail(req.user.email);
-    existing.permissions = req.authContext?.permissions || [];
 
     if (isSuperAdmin) {
       const updateFields = {
@@ -1974,12 +971,6 @@ app.get("/users/me", requireAuth, async (req, res) => {
 app.get("/users", requireAuth, async (req, res) => {
   try {
     res.set("Cache-Control", "no-store");
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "users:read", {
-      tenantId,
-      type: "user",
-    });
-    if (!ok) return;
     const userType = req.query.userType ? req.query.userType.toString() : null;
     const verified = req.query.verified ? req.query.verified.toString() : null;
     const ids = (req.query.ids || "")
@@ -1987,83 +978,6 @@ app.get("/users", requireAuth, async (req, res) => {
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean);
-
-    if (mainTable) {
-      if (ids.length > 0) {
-        const data = await ddb.send(
-          new BatchGetCommand({
-            RequestItems: {
-              [mainTable]: {
-                Keys: ids.map((id) => ({ PK: userPk(id), SK: userProfileSk() })),
-              },
-            },
-          })
-        );
-        const items = data.Responses?.[mainTable] || [];
-        const normalized = items.map((item) => ({
-          ...item,
-          userId: parseIdFromSk(item.PK, "USER"),
-          user_id: parseIdFromSk(item.PK, "USER"),
-        }));
-        res.json(normalized);
-        return;
-      }
-
-      const tenantUsers = await listMainTenantUsers(tenantId);
-      const userIds = tenantUsers
-        .map((item) => parseIdFromSk(item.SK, "USER"))
-        .filter(Boolean);
-
-      const profileData = userIds.length > 0
-        ? await ddb.send(
-            new BatchGetCommand({
-              RequestItems: {
-                [mainTable]: {
-                  Keys: userIds.map((id) => ({ PK: userPk(id), SK: userProfileSk() })),
-                },
-              },
-            })
-          )
-        : null;
-      const profiles = profileData?.Responses?.[mainTable] || [];
-
-      let items = tenantUsers.map((item) => {
-        const userId = parseIdFromSk(item.SK, "USER");
-        const profile = profiles.find((p) => p.PK === userPk(userId));
-        const verificationStatus = profile?.verification_status || item.verification_status;
-        return {
-          userId,
-          user_id: userId,
-          full_name: profile?.full_name || item.display_name || null,
-          email: profile?.email || item.user_email || null,
-          phone: profile?.phone || null,
-          department: profile?.department || null,
-          year_of_study: profile?.year_of_study || null,
-          roll_number: profile?.roll_number || null,
-          employee_id: profile?.employee_id || null,
-          user_type: item.role || "student",
-          is_verified: verificationStatus === "verified",
-          user_status: profile?.user_status || item.status || "active",
-        };
-      });
-
-      if (userType) {
-        items = items.filter((item) => item.user_type === userType);
-      }
-      if (verified === "true" || verified === "false") {
-        const flag = verified === "true";
-        items = items.filter((item) => Boolean(item.is_verified) === flag);
-      }
-
-      res.json(items);
-      return;
-    }
-
-    if (!isLegacyFallbackAllowed(tenantId)) {
-      res.status(403).json({ message: "Legacy fallback disabled" });
-      return;
-    }
-    logLegacyFallback(req, "users_list");
 
     if (ids.length === 0) {
       const filters = [];
@@ -2133,22 +1047,19 @@ app.get("/users", requireAuth, async (req, res) => {
 
 app.put("/users/:userId", requireAuth, async (req, res) => {
   try {
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "users:update", {
-      tenantId,
-      type: "user",
-      id: req.params.userId,
-    });
-    if (!ok) return;
     const now = new Date().toISOString();
-    const updatePayload = filterUserUpdateFields(req.body);
+    const existing = await getUserWithFallbackKey(req.params.userId);
+    const normalized = applyDefaults({
+      incoming: req.body,
+      defaults: USERS_DEFAULTS,
+      existing: existing.Item,
+      omitFields: ["userId", "user_id", "createdAt", "created_at", "updatedAt", "updated_at"],
+    });
 
-    const updateFields = cleanUpdateFields({
-      ...updatePayload,
+    const update = buildUpdateExpression({
+      ...normalized,
       updatedAt: now,
     });
-
-    const update = buildUpdateExpression(updateFields);
     if (!update) {
       res.status(400).json({ message: "No fields to update" });
       return;
@@ -2156,7 +1067,6 @@ app.put("/users/:userId", requireAuth, async (req, res) => {
 
     update.UpdateExpression = `${update.UpdateExpression}, #createdAt = if_not_exists(#createdAt, :createdAt)`;
     update.ExpressionAttributeNames["#createdAt"] = "createdAt";
-    const existing = await getUserWithFallbackKey(req.params.userId);
     update.ExpressionAttributeValues[":createdAt"] =
       existing.Item?.createdAt || existing.Item?.created_at || now;
 
@@ -2164,56 +1074,6 @@ app.put("/users/:userId", requireAuth, async (req, res) => {
       userId: req.params.userId,
       update,
     });
-
-    const updatedProfile = data.Attributes || { userId: req.params.userId, ...updateFields };
-    const role = updatedProfile.user_type || "student";
-    await Promise.all([
-      writeMainItem(
-        buildUserProfileItem(req.params.userId, {
-          full_name: updatedProfile.full_name || null,
-          email: updatedProfile.email || null,
-          phone: updatedProfile.phone || null,
-          department: updatedProfile.department || null,
-          year_of_study: updatedProfile.year_of_study || null,
-          roll_number: updatedProfile.roll_number || null,
-          employee_id: updatedProfile.employee_id || null,
-          profile_photo_url: updatedProfile.avatar_url || null,
-          completion_percent: updatedProfile.completion_percent || null,
-          verification_status: updatedProfile.is_verified ? "verified" : "pending",
-          user_status: updatedProfile.user_status || "active",
-          updated_at: now,
-        })
-      ),
-      writeMainItem(
-        buildTenantUserItem(tenantId, req.params.userId, {
-          role,
-          status: updatedProfile.user_status || "active",
-          primary: true,
-          user_email: updatedProfile.email || null,
-          display_name: updatedProfile.full_name || null,
-          updated_at: now,
-        })
-      ),
-      writeMainItem(
-        buildPermissionItem(req.params.userId, `TENANT#${tenantId}`, {
-          role,
-          allowedActions: getRoleAllowedActions(role),
-          grantedBy: req.user.sub,
-          grantedAt: now,
-        })
-      ),
-    ]);
-
-    if (existing.Item?.user_type && existing.Item.user_type !== role) {
-      await writeAuditLog({
-        req,
-        tenantId,
-        action: "roles:update",
-        resourceType: "user",
-        resourceId: req.params.userId,
-        success: true,
-      });
-    }
 
     res.json(data.Attributes || {});
   } catch (error) {
@@ -2223,13 +1083,6 @@ app.put("/users/:userId", requireAuth, async (req, res) => {
 
 app.delete("/users/:userId", requireAuth, async (req, res) => {
   try {
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "users:delete", {
-      tenantId,
-      type: "user",
-      id: req.params.userId,
-    });
-    if (!ok) return;
     const target = await ddb.send(
       new GetCommand({
         TableName: USERS_TABLE,
@@ -2248,14 +1101,6 @@ app.delete("/users/:userId", requireAuth, async (req, res) => {
         Key: { userId: req.params.userId },
       })
     );
-    await writeAuditLog({
-      req,
-      tenantId,
-      action: "users:delete",
-      resourceType: "user",
-      resourceId: req.params.userId,
-      success: true,
-    });
     res.status(204).end();
   } catch (error) {
     res.status(500).json({ message: "Failed to delete user" });
@@ -2265,23 +1110,24 @@ app.delete("/users/:userId", requireAuth, async (req, res) => {
 app.put("/users/me", requireAuth, async (req, res) => {
   try {
     const userId = req.user.sub;
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "users:update", {
-      tenantId,
-      ownerId: userId,
-      ownerActions: ["users:update"],
-      type: "user",
-      id: userId,
-    });
-    if (!ok) return;
     const now = new Date().toISOString();
     const isSuperAdmin = isSuperAdminEmail(req.user.email);
-    const updatePayload = filterUserUpdateFields(req.body);
+    const updatePayload = { ...req.body };
+    delete updatePayload.userId;
+    delete updatePayload.user_id;
 
-    const updateFields = cleanUpdateFields({
-      ...updatePayload,
-      updatedAt: now,
+    const existing = await getUserWithFallbackKey(userId);
+    const normalized = applyDefaults({
+      incoming: updatePayload,
+      defaults: USERS_DEFAULTS,
+      existing: existing.Item,
+      omitFields: ["userId", "user_id", "createdAt", "created_at", "updatedAt", "updated_at"],
     });
+
+    const updateFields = {
+      ...normalized,
+      updatedAt: now,
+    };
 
     if (isSuperAdmin) {
       updateFields.user_type = "admin";
@@ -2298,52 +1144,12 @@ app.put("/users/me", requireAuth, async (req, res) => {
 
     update.UpdateExpression = `${update.UpdateExpression}, #createdAt = if_not_exists(#createdAt, :createdAt)`;
     update.ExpressionAttributeNames["#createdAt"] = "createdAt";
-    const existing = await getUserWithFallbackKey(userId);
     update.ExpressionAttributeValues[":createdAt"] =
       existing.Item?.createdAt || existing.Item?.created_at || req.body?.createdAt || now;
 
     const data = await updateUserWithFallbackKey({ userId, update });
-    const updatedProfile = data.Attributes || { userId, ...updateFields };
-    const role = updatedProfile.user_type || "student";
-    await Promise.all([
-      writeMainItem(
-        buildUserProfileItem(userId, {
-          full_name: updatedProfile.full_name || null,
-          email: updatedProfile.email || null,
-          phone: updatedProfile.phone || null,
-          department: updatedProfile.department || null,
-          year_of_study: updatedProfile.year_of_study || null,
-          roll_number: updatedProfile.roll_number || null,
-          employee_id: updatedProfile.employee_id || null,
-          profile_photo_url: updatedProfile.avatar_url || null,
-          completion_percent: updatedProfile.completion_percent || null,
-          verification_status: updatedProfile.is_verified ? "verified" : "pending",
-          user_status: updatedProfile.user_status || "active",
-          updated_at: now,
-        })
-      ),
-      writeMainItem(
-        buildTenantUserItem(tenantId, userId, {
-          role,
-          status: updatedProfile.user_status || "active",
-          primary: true,
-          user_email: updatedProfile.email || null,
-          display_name: updatedProfile.full_name || null,
-          updated_at: now,
-        })
-      ),
-      writeMainItem(
-        buildPermissionItem(userId, `TENANT#${tenantId}`, {
-          role,
-          allowedActions: getRoleAllowedActions(role),
-          grantedBy: userId,
-          grantedAt: now,
-        })
-      ),
-    ]);
     res.json(data.Attributes || {});
   } catch (error) {
-    console.error("Update profile failed:", error?.name || "Error", error?.message || error);
     res.status(500).json({ message: "Failed to update user profile" });
   }
 });
@@ -2351,53 +1157,11 @@ app.put("/users/me", requireAuth, async (req, res) => {
 app.post("/registrations", requireAuth, async (req, res) => {
   try {
     const userId = req.user.sub;
-    const tenantId = req.user?.tenantId || null;
     const { eventId } = req.body;
 
     if (!eventId) {
       res.status(400).json({ message: "eventId is required" });
       return;
-    }
-
-    const ok = await authorize({ req }, "registrations:create", {
-      tenantId,
-      ownerId: userId,
-      ownerActions: ["registrations:create"],
-      eventId,
-      requireEventTenantCheck: true,
-      type: "registration",
-      id: eventId,
-    });
-    if (!ok) return;
-
-    let eventData = null;
-    if (mainTable) {
-      const mainEvent = await getMainEventById(tenantId, eventId);
-      eventData = { Item: mainEvent };
-    } else {
-      if (!isLegacyFallbackAllowed(tenantId)) {
-        res.status(403).json({ message: "Legacy fallback disabled" });
-        return;
-      }
-      logLegacyFallback(req, "registrations_event_lookup");
-      eventData = await ddb.send(
-        new GetCommand({
-          TableName: EVENTS_TABLE,
-          Key: { eventId },
-        })
-      );
-    }
-    if (!eventData.Item) {
-      res.status(404).json({ message: "Event not found" });
-      return;
-    }
-
-    if (eventData.Item.registration_deadline) {
-      const deadline = new Date(eventData.Item.registration_deadline);
-      if (!Number.isNaN(deadline.getTime()) && deadline < new Date()) {
-        res.status(400).json({ message: "Registration deadline has passed" });
-        return;
-      }
     }
 
     let registrantProfile = null;
@@ -2432,76 +1196,8 @@ app.post("/registrations", requireAuth, async (req, res) => {
       }
     }
 
-    const formData = req.body?.form_data && typeof req.body.form_data === "object"
-      ? req.body.form_data
-      : {
-          full_name: req.body.full_name,
-          roll_number: req.body.roll_number,
-          college_name: req.body.college_name,
-          branch: req.body.branch,
-          email: req.body.email,
-          phone: req.body.phone,
-        };
-
-    const validationErrors = validateRegistrationFormData(eventData.Item, formData);
-    if (validationErrors.length > 0) {
-      res.status(400).json({ message: "Validation failed", errors: validationErrors });
-      return;
-    }
-
-    const participationType = eventData.Item.participation_type
-      || (eventData.Item.team_size_max && eventData.Item.team_size_max > 1 ? "team" : "individual");
-    if (participationType === "team") {
-      const teamName = String(formData.team_name || "").trim();
-      if (!teamName) {
-        res.status(400).json({ message: "Validation failed", errors: ["Team Name is required"] });
-        return;
-      }
-
-      const membersRaw = formData.team_members;
-      let members = [];
-      if (Array.isArray(membersRaw)) {
-        members = membersRaw.map((value) => String(value).trim()).filter(Boolean);
-      } else if (membersRaw) {
-        members = String(membersRaw)
-          .split(/[\n,]+/)
-          .map((value) => value.trim())
-          .filter(Boolean);
-      }
-
-      const minSize = Number(eventData.Item.team_size_min || 1);
-      const maxSize = Number(eventData.Item.team_size_max || Math.max(minSize, 1));
-      const totalMembers = 1 + members.length;
-
-      if (Number.isFinite(minSize) && totalMembers < minSize) {
-        res.status(400).json({
-          message: "Validation failed",
-          errors: [`Team must have at least ${minSize} members`],
-        });
-        return;
-      }
-
-      if (Number.isFinite(maxSize) && totalMembers > maxSize) {
-        res.status(400).json({
-          message: "Validation failed",
-          errors: [`Team must have at most ${maxSize} members`],
-        });
-        return;
-      }
-
-      const invalidEmails = members.filter(
-        (entry) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(entry)
-      );
-      if (invalidEmails.length > 0) {
-        res.status(400).json({
-          message: "Validation failed",
-          errors: ["Team member emails are invalid"],
-        });
-        return;
-      }
-    }
-
     const item = {
+      ...req.body,
       event_id: eventId,
       user_id: userId,
       qr_code: req.body.qr_code || generateQrCode(),
@@ -2509,8 +1205,6 @@ app.post("/registrations", requireAuth, async (req, res) => {
       registered_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
       createdAt: new Date().toISOString(),
-      form_data: formData,
-      team_data: req.body?.team_data || null,
       registrant: registrantProfile
         ? {
             full_name: registrantProfile.full_name || null,
@@ -2532,25 +1226,6 @@ app.post("/registrations", requireAuth, async (req, res) => {
       })
     );
 
-    await writeMainItem(
-      buildRegistrationItem(eventId, userId, {
-        tenant_id: tenantId,
-        status: item.registration_status,
-        form_data: item.form_data,
-        team_data: item.team_data,
-        created_at: item.created_at,
-      })
-    );
-
-    await writeAuditLog({
-      req,
-      tenantId,
-      action: "registrations:create",
-      resourceType: "event",
-      resourceId: eventId,
-      success: true,
-    });
-
     res.status(201).json(item);
   } catch (error) {
     if (error.name === "ConditionalCheckFailedException") {
@@ -2565,75 +1240,6 @@ app.get("/registrations", requireAuth, async (req, res) => {
   try {
     const { eventId, all } = req.query;
     const userId = req.user.sub;
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "registrations:read", {
-      tenantId,
-      ownerId: userId,
-      ownerActions: ["registrations:read"],
-      eventId: eventId ? String(eventId) : null,
-      requireEventTenantCheck: Boolean(eventId),
-      type: "registration",
-      id: eventId ? String(eventId) : userId,
-    });
-    if (!ok) return;
-
-    if (mainTable) {
-      if (eventId) {
-        if (all === "true") {
-          const data = await ddb.send(
-            new QueryCommand({
-              TableName: mainTable,
-              KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
-              ExpressionAttributeValues: {
-                ":pk": eventPk(eventId),
-                ":sk": "REG#USER#",
-              },
-            })
-          );
-          const items = (data.Items || []).map((item) => ({
-            ...item,
-            event_id: eventId,
-            user_id: parseIdFromSk(item.SK, "REG#USER"),
-            registration_status: item.status || item.registration_status,
-            registered_at: item.created_at || item.registered_at,
-          }));
-          res.json(items);
-          return;
-        }
-
-        const data = await ddb.send(
-          new GetCommand({
-            TableName: mainTable,
-            Key: {
-              PK: eventPk(eventId),
-              SK: eventRegSk(userId),
-            },
-          })
-        );
-        res.json(data.Item ? [data.Item] : []);
-        return;
-      }
-
-      const data = await ddb.send(
-        new QueryCommand({
-          TableName: mainTable,
-          IndexName: "GSI1",
-          KeyConditionExpression: "GSI1PK = :pk AND begins_with(GSI1SK, :sk)",
-          ExpressionAttributeValues: {
-            ":pk": gsi1Pk(userId),
-            ":sk": "EVENT#",
-          },
-        })
-      );
-      res.json(data.Items || []);
-      return;
-    }
-
-    if (!isLegacyFallbackAllowed(tenantId)) {
-      res.status(403).json({ message: "Legacy fallback disabled" });
-      return;
-    }
-    logLegacyFallback(req, "registrations_list");
 
     if (eventId) {
       if (all === "true") {
@@ -2812,17 +1418,6 @@ app.get("/registrations", requireAuth, async (req, res) => {
 
 app.get("/registrations/all", requireAuth, async (req, res) => {
   try {
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "registrations:read", {
-      tenantId,
-      type: "registration",
-      id: "all",
-    });
-    if (!ok) return;
-    if (mainTable) {
-      res.status(403).json({ message: "Unscoped registrations are not permitted" });
-      return;
-    }
     const { startDate, endDate } = req.query;
     const filters = [];
     const values = {};
@@ -2852,31 +1447,12 @@ app.get("/registrations/all", requireAuth, async (req, res) => {
 
 app.delete("/registrations/:eventId", requireAuth, async (req, res) => {
   try {
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "registrations:delete", {
-      tenantId,
-      ownerId: req.user.sub,
-      ownerActions: ["registrations:delete"],
-      eventId: req.params.eventId,
-      requireEventTenantCheck: true,
-      type: "registration",
-      id: req.params.eventId,
-    });
-    if (!ok) return;
     await ddb.send(
       new DeleteCommand({
         TableName: REGISTRATIONS_TABLE,
         Key: { event_id: req.params.eventId, user_id: req.user.sub },
       })
     );
-    await writeAuditLog({
-      req,
-      tenantId,
-      action: "registrations:delete",
-      resourceType: "event",
-      resourceId: req.params.eventId,
-      success: true,
-    });
     res.status(204).end();
   } catch (error) {
     res.status(500).json({ message: "Failed to cancel registration" });
@@ -2890,29 +1466,6 @@ app.get("/registrations/count", async (req, res) => {
       res.status(400).json({ message: "eventId is required" });
       return;
     }
-    const tenantId = resolveTenantIdFromRequest(req, defaultTenantId);
-
-    if (mainTable) {
-      const data = await ddb.send(
-        new QueryCommand({
-          TableName: mainTable,
-          KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
-          ExpressionAttributeValues: {
-            ":pk": eventPk(eventId),
-            ":sk": "REG#USER#",
-          },
-          Select: "COUNT",
-        })
-      );
-      res.json({ count: data.Count || 0 });
-      return;
-    }
-
-    if (!isLegacyFallbackAllowed(tenantId)) {
-      res.status(403).json({ message: "Legacy fallback disabled" });
-      return;
-    }
-    logLegacyFallback(req, "registrations_count");
 
     const data = await ddb.send(
       new QueryCommand({
@@ -2932,44 +1485,7 @@ app.get("/registrations/count", async (req, res) => {
 app.get("/teams", requireAuth, async (req, res) => {
   try {
     const { eventId, inviteCode, mentorId } = req.query;
-    const tenantId = req.user?.tenantId || null;
     if (eventId) {
-      const ok = await authorize({ req }, "teams:read", {
-        tenantId,
-        eventId: String(eventId),
-        requireEventTenantCheck: true,
-        type: "team",
-      });
-      if (!ok) return;
-      if (mainTable) {
-        const data = await ddb.send(
-          new QueryCommand({
-            TableName: mainTable,
-            KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
-            ExpressionAttributeValues: {
-              ":pk": eventPk(eventId),
-              ":sk": "TEAM#",
-            },
-          })
-        );
-
-        let items = (data.Items || []).map((item) => ({
-          ...item,
-          event_id: eventId,
-          team_id: parseIdFromSk(item.SK, "TEAM"),
-          name: item.team_name || item.name,
-        }));
-
-        if (inviteCode) {
-          items = items.filter((team) => team.invite_code === inviteCode.toString().toUpperCase());
-        }
-        if (mentorId) {
-          items = items.filter((team) => team.mentor_id === mentorId);
-        }
-        res.json(items);
-        return;
-      }
-
       const data = await ddb.send(
         new QueryCommand({
           TableName: TEAMS_TABLE,
@@ -2990,7 +1506,13 @@ app.get("/teams", requireAuth, async (req, res) => {
       res.json(items);
       return;
     }
-    res.status(400).json({ message: "eventId is required" });
+
+    const data = await ddb.send(new ScanCommand({ TableName: TEAMS_TABLE }));
+    let items = data.Items || [];
+    if (mentorId) {
+      items = items.filter((team) => team.mentor_id === mentorId);
+    }
+    res.json(items);
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch teams" });
   }
@@ -2998,33 +1520,33 @@ app.get("/teams", requireAuth, async (req, res) => {
 
 app.get("/roles/platform", requireAuth, async (req, res) => {
   try {
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "roles:read", { tenantId, type: "role" });
-    if (!ok) return;
-
-    if (!mainTable) {
-      res.status(500).json({ message: "EVENTGO_MAIN_TABLE is not configured" });
+    if (!ROLES_TABLE) {
+      res.status(500).json({ message: "ROLES_TABLE is not configured" });
       return;
     }
+    const { role, eventId } = req.query;
+    const filters = ["user_id = :user_id"];
+    const values = { ":user_id": req.user.sub };
 
-    const { eventId } = req.query;
+    if (role) {
+      filters.push("#role = :role");
+      values[":role"] = role;
+    }
+    if (eventId) {
+      filters.push("event_id = :event_id");
+      values[":event_id"] = eventId;
+    }
+
     const data = await ddb.send(
-      new QueryCommand({
-        TableName: mainTable,
-        KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
-        ExpressionAttributeValues: {
-          ":pk": userPk(req.user.sub),
-          ":sk": "PERMISSION#",
-        },
-        ConsistentRead: true,
+      new ScanCommand({
+        TableName: ROLES_TABLE,
+        FilterExpression: filters.join(" AND "),
+        ExpressionAttributeValues: values,
+        ExpressionAttributeNames: role ? { "#role": "role" } : undefined,
       })
     );
 
-    let items = (data.Items || []).filter((item) => item.type === "permission");
-    if (eventId) {
-      items = items.filter((item) => item.scope === `EVENT#${eventId}`);
-    }
-    res.json(items);
+    res.json(data.Items || []);
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch roles" });
   }
@@ -3032,27 +1554,18 @@ app.get("/roles/platform", requireAuth, async (req, res) => {
 
 app.get("/permissions/roles", requireAuth, async (req, res) => {
   try {
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "roles:read", {
-      tenantId,
-      type: "role",
-    });
-    if (!ok) return;
-
-    if (!mainTable) {
-      res.status(500).json({ message: "EVENTGO_MAIN_TABLE is not configured" });
+    if (!ROLES_TABLE) {
+      res.status(500).json({ message: "ROLES_TABLE is not configured" });
       return;
     }
 
     const data = await ddb.send(
-      new QueryCommand({
-        TableName: mainTable,
-        KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
+      new ScanCommand({
+        TableName: ROLES_TABLE,
+        FilterExpression: "role_type = :role_type",
         ExpressionAttributeValues: {
-          ":pk": tenantPk(tenantId),
-          ":sk": "ROLE#",
+          ":role_type": "college_role_permissions",
         },
-        ConsistentRead: true,
       })
     );
 
@@ -3064,13 +1577,10 @@ app.get("/permissions/roles", requireAuth, async (req, res) => {
 
 app.put("/permissions/roles/:roleId", requireAuth, async (req, res) => {
   try {
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "roles:update", {
-      tenantId,
-      type: "role",
-      id: req.params.roleId,
-    });
-    if (!ok) return;
+    if (!ROLES_TABLE) {
+      res.status(500).json({ message: "ROLES_TABLE is not configured" });
+      return;
+    }
 
     const permissions = Array.isArray(req.body?.permissions) ? req.body.permissions : null;
     if (!permissions) {
@@ -3079,16 +1589,9 @@ app.put("/permissions/roles/:roleId", requireAuth, async (req, res) => {
     }
 
     const now = new Date().toISOString();
-    if (!mainTable) {
-      res.status(500).json({ message: "EVENTGO_MAIN_TABLE is not configured" });
-      return;
-    }
-
     const item = {
-      PK: tenantPk(tenantId),
-      SK: `ROLE#${req.params.roleId}`,
-      type: "role_permissions",
       role_id: req.params.roleId,
+      role_type: "college_role_permissions",
       permissions,
       updated_by: req.user.sub,
       updated_at: now,
@@ -3097,19 +1600,10 @@ app.put("/permissions/roles/:roleId", requireAuth, async (req, res) => {
 
     await ddb.send(
       new PutCommand({
-        TableName: mainTable,
+        TableName: ROLES_TABLE,
         Item: item,
       })
     );
-
-    await writeAuditLog({
-      req,
-      tenantId,
-      action: "roles:update",
-      resourceType: "role",
-      resourceId: req.params.roleId,
-      success: true,
-    });
 
     res.json(item);
   } catch (error) {
@@ -3119,33 +1613,21 @@ app.put("/permissions/roles/:roleId", requireAuth, async (req, res) => {
 
 app.get("/events/:eventId/permissions", requireAuth, async (req, res) => {
   try {
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "permissions:read", {
-      tenantId,
-      eventId: req.params.eventId,
-      requireEventTenantCheck: true,
-      type: "event",
-      id: req.params.eventId,
-    });
-    if (!ok) return;
-
-    if (!mainTable) {
-      res.status(500).json({ message: "EVENTGO_MAIN_TABLE is not configured" });
+    if (!EVENT_PERMISSIONS_TABLE) {
+      res.status(500).json({ message: "EVENT_PERMISSIONS_TABLE is not configured" });
       return;
     }
 
     const data = await ddb.send(
       new QueryCommand({
-        TableName: mainTable,
-        KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
-        ExpressionAttributeValues: {
-          ":pk": eventPk(req.params.eventId),
-          ":sk": "PERMISSION#USER#",
-        },
+        TableName: EVENT_PERMISSIONS_TABLE,
+        KeyConditionExpression: "event_id = :event_id",
+        ExpressionAttributeValues: { ":event_id": req.params.eventId },
       })
     );
 
-    res.json(data.Items || []);
+    const items = (data.Items || []).filter((item) => item.is_active !== false);
+    res.json(items);
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch event permissions" });
   }
@@ -3153,119 +1635,55 @@ app.get("/events/:eventId/permissions", requireAuth, async (req, res) => {
 
 app.post("/events/:eventId/permissions", requireAuth, async (req, res) => {
   try {
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "permissions:grant", {
-      tenantId,
-      eventId: req.params.eventId,
-      requireEventTenantCheck: true,
-      type: "event",
-      id: req.params.eventId,
-    });
-    if (!ok) return;
-
-    if (!mainTable) {
-      res.status(500).json({ message: "EVENTGO_MAIN_TABLE is not configured" });
+    if (!EVENT_PERMISSIONS_TABLE) {
+      res.status(500).json({ message: "EVENT_PERMISSIONS_TABLE is not configured" });
       return;
     }
 
-    const { user_id, email, permission_type, role, allowedActions } = req.body;
-    const resolvedEmail = normalizeEmail(email);
-    const roleName = role || permission_type || "event_manager";
-    const now = new Date().toISOString();
-
-    let targetUserId = user_id || null;
-    if (!targetUserId && resolvedEmail) {
-      const membership = await ddb.send(
-        new QueryCommand({
-          TableName: mainTable,
-          KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
-          ExpressionAttributeValues: {
-            ":pk": tenantPk(tenantId),
-            ":sk": "USER#",
-            ":email": resolvedEmail,
-          },
-          FilterExpression: "user_email = :email",
-          ConsistentRead: true,
-        })
-      );
-      const match = (membership.Items || [])[0];
-      targetUserId = match ? parseIdFromSk(match.SK, "USER") : null;
-    }
-
-    if (!targetUserId) {
-      res.status(400).json({ message: "user_id is required" });
+    const { user_id, permission_type } = req.body;
+    if (!user_id || !permission_type) {
+      res.status(400).json({ message: "user_id and permission_type are required" });
       return;
     }
 
-    const membershipCheck = await ddb.send(
-      new GetCommand({
-        TableName: mainTable,
-        Key: { PK: tenantPk(tenantId), SK: tenantUserSk(targetUserId) },
-        ConsistentRead: true,
+    const existing = await ddb.send(
+      new QueryCommand({
+        TableName: EVENT_PERMISSIONS_TABLE,
+        KeyConditionExpression: "event_id = :event_id",
+        FilterExpression: "user_id = :user_id AND permission_type = :permission_type AND is_active = :is_active",
+        ExpressionAttributeValues: {
+          ":event_id": req.params.eventId,
+          ":user_id": user_id,
+          ":permission_type": permission_type,
+          ":is_active": true,
+        },
       })
     );
-    if (!membershipCheck.Item) {
-      res.status(400).json({ message: "User is not part of this tenant" });
-      return;
-    }
 
-    const scope = `EVENT#${req.params.eventId}`;
-    const existingPermission = await ddb.send(
-      new GetCommand({
-        TableName: mainTable,
-        Key: { PK: userPk(targetUserId), SK: permissionSk(scope) },
-        ConsistentRead: true,
-      })
-    );
-    if (existingPermission.Item) {
+    if ((existing.Items || []).length > 0) {
       res.status(409).json({ message: "Permission already granted" });
       return;
     }
-    const resolvedActions = Array.isArray(allowedActions) && allowedActions.length > 0
-      ? allowedActions
-      : DEFAULT_EVENT_PERMISSION_ACTIONS;
-    const permissionItem = buildPermissionItem(targetUserId, scope, {
-      role: roleName,
-      allowedActions: resolvedActions,
-      grantedBy: req.user.sub,
-      grantedAt: now,
-    });
-    const eventPermissionItem = {
-      PK: eventPk(req.params.eventId),
-      SK: `PERMISSION#USER#${targetUserId}`,
-      type: "event_permission",
-      user_id: targetUserId,
-      role: roleName,
-      allowedActions: resolvedActions,
+
+    const permissionId = req.body.permission_id || `perm_${crypto.randomUUID()}`;
+    const item = {
+      event_id: req.params.eventId,
+      permission_id: permissionId,
+      user_id,
+      permission_type,
       granted_by: req.user.sub,
-      granted_at: now,
+      granted_at: new Date().toISOString(),
+      is_active: true,
     };
 
-    await Promise.all([
-      ddb.send(
-        new PutCommand({
-          TableName: mainTable,
-          Item: permissionItem,
-        })
-      ),
-      ddb.send(
-        new PutCommand({
-          TableName: mainTable,
-          Item: eventPermissionItem,
-        })
-      ),
-    ]);
+    await ddb.send(
+      new PutCommand({
+        TableName: EVENT_PERMISSIONS_TABLE,
+        Item: item,
+      })
+    );
 
-    await writeAuditLog({
-      req,
-      tenantId,
-      action: "permissions:grant",
-      resourceType: "event",
-      resourceId: req.params.eventId,
-      success: true,
-    });
-
-    res.status(201).json(permissionItem);
+    res.status(201).json(item);
   } catch (error) {
     res.status(500).json({ message: "Failed to grant permission" });
   }
@@ -3273,70 +1691,24 @@ app.post("/events/:eventId/permissions", requireAuth, async (req, res) => {
 
 app.delete("/events/:eventId/permissions/:permissionId", requireAuth, async (req, res) => {
   try {
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "permissions:revoke", {
-      tenantId,
-      eventId: req.params.eventId,
-      requireEventTenantCheck: true,
-      type: "event",
-      id: req.params.eventId,
-    });
-    if (!ok) return;
-
-    if (!mainTable) {
-      res.status(500).json({ message: "EVENTGO_MAIN_TABLE is not configured" });
+    if (!EVENT_PERMISSIONS_TABLE) {
+      res.status(500).json({ message: "EVENT_PERMISSIONS_TABLE is not configured" });
       return;
     }
 
-    let userId = req.query?.user_id || req.body?.user_id || null;
-    const email = normalizeEmail(req.query?.email || req.body?.email || null);
-    if (!userId && email) {
-      const membership = await ddb.send(
-        new QueryCommand({
-          TableName: mainTable,
-          KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
-          ExpressionAttributeValues: {
-            ":pk": tenantPk(tenantId),
-            ":sk": "USER#",
-            ":email": email,
-          },
-          FilterExpression: "user_email = :email",
-          ConsistentRead: true,
-        })
-      );
-      const match = (membership.Items || [])[0];
-      userId = match ? parseIdFromSk(match.SK, "USER") : null;
-    }
-
-    if (!userId) {
-      res.status(400).json({ message: "user_id is required" });
-      return;
-    }
-
-    const scope = `EVENT#${req.params.eventId}`;
-    await Promise.all([
-      ddb.send(
-        new DeleteCommand({
-          TableName: mainTable,
-          Key: { PK: userPk(userId), SK: permissionSk(scope) },
-        })
-      ),
-      ddb.send(
-        new DeleteCommand({
-          TableName: mainTable,
-          Key: { PK: eventPk(req.params.eventId), SK: `PERMISSION#USER#${userId}` },
-        })
-      ),
-    ]);
-
-    await writeAuditLog({
-      req,
-      tenantId,
-      action: "permissions:revoke",
-      resourceType: "event",
-      resourceId: req.params.eventId,
-      success: true,
+    const update = buildUpdateExpression({
+      is_active: false,
+      revoked_by: req.user.sub,
+      revoked_at: new Date().toISOString(),
     });
+
+    await ddb.send(
+      new UpdateCommand({
+        TableName: EVENT_PERMISSIONS_TABLE,
+        Key: { event_id: req.params.eventId, permission_id: req.params.permissionId },
+        ...update,
+      })
+    );
 
     res.status(204).end();
   } catch (error) {
@@ -3346,15 +1718,6 @@ app.delete("/events/:eventId/permissions/:permissionId", requireAuth, async (req
 
 app.post("/events/:eventId/schedule", requireAuth, async (req, res) => {
   try {
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "events:schedule", {
-      tenantId,
-      eventId: req.params.eventId,
-      requireEventTenantCheck: true,
-      type: "event",
-      id: req.params.eventId,
-    });
-    if (!ok) return;
     if (!SCHEDULES_TABLE) {
       res.status(500).json({ message: "SCHEDULES_TABLE is not configured" });
       return;
@@ -3398,16 +1761,6 @@ app.post("/teams", requireAuth, async (req, res) => {
       return;
     }
 
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "teams:create", {
-      tenantId,
-      eventId: event_id,
-      requireEventTenantCheck: true,
-      type: "team",
-      id: event_id,
-    });
-    if (!ok) return;
-
     const teamId = req.body.team_id || `team_${crypto.randomUUID()}`;
     const item = {
       event_id,
@@ -3442,24 +1795,6 @@ app.post("/teams", requireAuth, async (req, res) => {
       })
     );
 
-    await Promise.all([
-      writeMainItem(
-        buildTeamItem(event_id, teamId, {
-          team_name: item.name,
-          leader_id: item.leader_id,
-          status: item.status,
-          invite_code: item.invite_code,
-          created_at: item.created_at,
-        })
-      ),
-      writeMainItem(
-        buildTeamMemberItem(teamId, req.user.sub, {
-          role: "leader",
-          joined_at: new Date().toISOString(),
-        })
-      ),
-    ]);
-
     res.status(201).json(item);
   } catch (error) {
     res.status(500).json({ message: "Failed to create team" });
@@ -3474,16 +1809,6 @@ app.put("/teams/:teamId", requireAuth, async (req, res) => {
       return;
     }
 
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "teams:update", {
-      tenantId,
-      eventId: event_id,
-      requireEventTenantCheck: true,
-      type: "team",
-      id: req.params.teamId,
-    });
-    if (!ok) return;
-
     const update = buildUpdateExpression({
       ...req.body,
       updated_at: new Date().toISOString(),
@@ -3495,18 +1820,6 @@ app.put("/teams/:teamId", requireAuth, async (req, res) => {
         Key: { event_id, team_id: req.params.teamId },
         ...update,
         ReturnValues: "ALL_NEW",
-      })
-    );
-
-    const updated = data.Attributes || {};
-    await writeMainItem(
-      buildTeamItem(event_id, req.params.teamId, {
-        team_name: updated.name || updated.team_name || null,
-        leader_id: updated.leader_id || null,
-        status: updated.status || null,
-        invite_code: updated.invite_code || null,
-        created_at: updated.created_at || null,
-        updated_at: updated.updated_at || null,
       })
     );
 
@@ -3524,27 +1837,12 @@ app.delete("/teams/:teamId", requireAuth, async (req, res) => {
       return;
     }
 
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "teams:delete", {
-      tenantId,
-      eventId: String(event_id),
-      requireEventTenantCheck: true,
-      type: "team",
-      id: req.params.teamId,
-    });
-    if (!ok) return;
-
     await ddb.send(
       new DeleteCommand({
         TableName: TEAMS_TABLE,
         Key: { event_id, team_id: req.params.teamId },
       })
     );
-
-    await deleteMainItem({
-      PK: eventPk(event_id),
-      SK: eventTeamSk(req.params.teamId),
-    });
 
     res.status(204).end();
   } catch (error) {
@@ -3554,41 +1852,6 @@ app.delete("/teams/:teamId", requireAuth, async (req, res) => {
 
 app.get("/teams/:teamId/members", requireAuth, async (req, res) => {
   try {
-    const tenantId = req.user?.tenantId || null;
-    const eventId = req.query?.event_id ? String(req.query.event_id) : null;
-    if (!eventId) {
-      res.status(400).json({ message: "event_id is required" });
-      return;
-    }
-    const ok = await authorize({ req }, "teams:read", {
-      tenantId,
-      eventId,
-      requireEventTenantCheck: true,
-      type: "team",
-      id: req.params.teamId,
-    });
-    if (!ok) return;
-    if (mainTable) {
-      const data = await ddb.send(
-        new QueryCommand({
-          TableName: mainTable,
-          KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
-          ExpressionAttributeValues: {
-            ":pk": teamPk(req.params.teamId),
-            ":sk": "MEMBER#",
-          },
-        })
-      );
-
-      const items = (data.Items || []).map((item) => ({
-        ...item,
-        team_id: req.params.teamId,
-        user_id: parseIdFromSk(item.SK, "MEMBER"),
-      }));
-      res.json(items);
-      return;
-    }
-
     const data = await ddb.send(
       new QueryCommand({
         TableName: TEAM_MEMBERS_TABLE,
@@ -3605,20 +1868,6 @@ app.get("/teams/:teamId/members", requireAuth, async (req, res) => {
 
 app.post("/teams/:teamId/members", requireAuth, async (req, res) => {
   try {
-    const tenantId = req.user?.tenantId || null;
-    const eventId = req.body?.event_id || req.query?.event_id || null;
-    if (!eventId) {
-      res.status(400).json({ message: "event_id is required" });
-      return;
-    }
-    const ok = await authorize({ req }, "teams:update", {
-      tenantId,
-      eventId: String(eventId),
-      requireEventTenantCheck: true,
-      type: "team",
-      id: req.params.teamId,
-    });
-    if (!ok) return;
     const userId = req.body.user_id || req.user.sub;
     await ddb.send(
       new PutCommand({
@@ -3630,13 +1879,6 @@ app.post("/teams/:teamId/members", requireAuth, async (req, res) => {
           joined_at: new Date().toISOString(),
         },
         ConditionExpression: "attribute_not_exists(team_id) AND attribute_not_exists(user_id)",
-      })
-    );
-
-    await writeMainItem(
-      buildTeamMemberItem(req.params.teamId, userId, {
-        role: req.body.role || "member",
-        joined_at: new Date().toISOString(),
       })
     );
 
@@ -3652,31 +1894,12 @@ app.post("/teams/:teamId/members", requireAuth, async (req, res) => {
 
 app.delete("/teams/:teamId/members/:userId", requireAuth, async (req, res) => {
   try {
-    const tenantId = req.user?.tenantId || null;
-    const eventId = req.query?.event_id || null;
-    if (!eventId) {
-      res.status(400).json({ message: "event_id is required" });
-      return;
-    }
-    const ok = await authorize({ req }, "teams:update", {
-      tenantId,
-      eventId: String(eventId),
-      requireEventTenantCheck: true,
-      type: "team",
-      id: req.params.teamId,
-    });
-    if (!ok) return;
     await ddb.send(
       new DeleteCommand({
         TableName: TEAM_MEMBERS_TABLE,
         Key: { team_id: req.params.teamId, user_id: req.params.userId },
       })
     );
-
-    await deleteMainItem({
-      PK: teamPk(req.params.teamId),
-      SK: teamMemberSk(req.params.userId),
-    });
     res.status(204).end();
   } catch (error) {
     res.status(500).json({ message: "Failed to remove team member" });
@@ -3685,15 +1908,6 @@ app.delete("/teams/:teamId/members/:userId", requireAuth, async (req, res) => {
 
 app.get("/notifications", requireAuth, async (req, res) => {
   try {
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "notifications:read", {
-      tenantId,
-      ownerId: req.user.sub,
-      ownerActions: ["notifications:read"],
-      type: "notification",
-      id: req.user.sub,
-    });
-    if (!ok) return;
     const data = await ddb.send(
       new QueryCommand({
         TableName: NOTIFICATIONS_TABLE,
@@ -3711,15 +1925,6 @@ app.get("/notifications", requireAuth, async (req, res) => {
 
 app.post("/notifications/mark-read", requireAuth, async (req, res) => {
   try {
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "notifications:update", {
-      tenantId,
-      ownerId: req.user.sub,
-      ownerActions: ["notifications:update"],
-      type: "notification",
-      id: req.user.sub,
-    });
-    if (!ok) return;
     const { notification_id } = req.body;
     if (!notification_id) {
       res.status(400).json({ message: "notification_id is required" });
@@ -3742,15 +1947,6 @@ app.post("/notifications/mark-read", requireAuth, async (req, res) => {
 
 app.post("/notifications/mark-all-read", requireAuth, async (req, res) => {
   try {
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "notifications:update", {
-      tenantId,
-      ownerId: req.user.sub,
-      ownerActions: ["notifications:update"],
-      type: "notification",
-      id: req.user.sub,
-    });
-    if (!ok) return;
     const data = await ddb.send(
       new QueryCommand({
         TableName: NOTIFICATIONS_TABLE,
@@ -3786,16 +1982,6 @@ app.get("/submissions", requireAuth, async (req, res) => {
       return;
     }
 
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "submissions:read", {
-      tenantId,
-      eventId: String(eventId),
-      requireEventTenantCheck: true,
-      type: "submission",
-      id: String(eventId),
-    });
-    if (!ok) return;
-
     const data = await ddb.send(
       new QueryCommand({
         TableName: SUBMISSIONS_TABLE,
@@ -3825,16 +2011,6 @@ app.post("/submissions", requireAuth, async (req, res) => {
       res.status(400).json({ message: "event_id, team_id, and round are required" });
       return;
     }
-
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "submissions:create", {
-      tenantId,
-      eventId: event_id,
-      requireEventTenantCheck: true,
-      type: "submission",
-      id: event_id,
-    });
-    if (!ok) return;
 
     const submissionId = req.body.submission_id || `sub_${crypto.randomUUID()}`;
     const item = {
@@ -3867,16 +2043,6 @@ app.put("/submissions/:submissionId", requireAuth, async (req, res) => {
       return;
     }
 
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "submissions:update", {
-      tenantId,
-      eventId: event_id,
-      requireEventTenantCheck: true,
-      type: "submission",
-      id: req.params.submissionId,
-    });
-    if (!ok) return;
-
     const update = buildUpdateExpression({
       ...req.body,
       updated_at: new Date().toISOString(),
@@ -3905,16 +2071,6 @@ app.get("/rubrics", requireAuth, async (req, res) => {
       return;
     }
 
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "rubrics:read", {
-      tenantId,
-      eventId: String(eventId),
-      requireEventTenantCheck: true,
-      type: "rubric",
-      id: String(eventId),
-    });
-    if (!ok) return;
-
     const data = await ddb.send(
       new QueryCommand({
         TableName: JUDGING_RUBRICS_TABLE,
@@ -3936,14 +2092,6 @@ app.post("/judging/scores", requireAuth, async (req, res) => {
       res.status(400).json({ message: "submission_id, rubric_id, and score are required" });
       return;
     }
-
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "judging:write", {
-      tenantId,
-      type: "judging",
-      id: submission_id,
-    });
-    if (!ok) return;
 
     const item = {
       ...req.body,
@@ -3973,14 +2121,6 @@ app.get("/judging/scores", requireAuth, async (req, res) => {
       return;
     }
 
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "judging:read", {
-      tenantId,
-      type: "judging",
-      id: String(submissionId),
-    });
-    if (!ok) return;
-
     const data = await ddb.send(
       new QueryCommand({
         TableName: JUDGING_SCORES_TABLE,
@@ -4002,16 +2142,6 @@ app.post("/registrations/checkin", requireAuth, async (req, res) => {
       res.status(400).json({ message: "eventId and qrCode are required" });
       return;
     }
-
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "registrations:update", {
-      tenantId,
-      eventId,
-      requireEventTenantCheck: true,
-      type: "registration",
-      id: eventId,
-    });
-    if (!ok) return;
 
     const scanData = await ddb.send(
       new ScanCommand({
@@ -4062,53 +2192,15 @@ app.post("/registrations/checkin", requireAuth, async (req, res) => {
 
 app.post("/media/presign", requireAuth, async (req, res) => {
   try {
-    const tenantId = req.user?.tenantId || null;
-    const ok = await authorize({ req }, "media:presign", {
-      tenantId,
-      type: "media",
-    });
-    if (!ok) return;
     if (!S3_BUCKET_NAME) {
       res.status(500).json({ message: "S3_BUCKET_NAME is not configured" });
       return;
     }
 
-    const { fileName, contentType, folder = "uploads", fileSize, assetType } = req.body;
+    const { fileName, contentType, folder = "uploads" } = req.body;
     if (!fileName || !contentType) {
       res.status(400).json({ message: "fileName and contentType are required" });
       return;
-    }
-
-    if (String(folder).startsWith("assets")) {
-      await logAssetRejection(req, "assets_upload_forbidden", { fileName, folder });
-      res.status(400).json({ message: "Assets must be optimized and stored under /var/www/assets" });
-      return;
-    }
-
-    if (contentType.startsWith("image/")) {
-      if (contentType !== "image/webp") {
-        await logAssetRejection(req, "invalid_mime", { fileName, contentType });
-        res.status(400).json({ message: "Only image/webp uploads are allowed" });
-        return;
-      }
-      if (!fileName.toLowerCase().endsWith(".webp")) {
-        await logAssetRejection(req, "invalid_extension", { fileName, contentType });
-        res.status(400).json({ message: "Only .webp files are allowed" });
-        return;
-      }
-      if (!fileSize || Number.isNaN(Number(fileSize))) {
-        await logAssetRejection(req, "missing_file_size", { fileName, contentType });
-        res.status(400).json({ message: "fileSize is required for image uploads" });
-        return;
-      }
-      const category = assetType || getAssetCategoryFromPath(`/${folder}/${fileName}`);
-      const limit = getAssetSizeLimit(category);
-      if (Number(fileSize) > limit) {
-        await logAssetRejection(req, "file_size_exceeded", { fileName, contentType, fileSize, limit });
-        res.status(400).json({ message: "Image exceeds size limits" });
-        return;
-      }
-      lastAssetUploadAt = new Date().toISOString();
     }
 
     const key = `${folder}/${crypto.randomUUID()}-${fileName}`;
@@ -4129,15 +2221,6 @@ app.post("/media/presign", requireAuth, async (req, res) => {
     res.status(500).json({ message: "Failed to create upload URL" });
   }
 });
-
-if (process.env.ENFORCE_ASSET_GUARDRAILS === "true") {
-  try {
-    assertAssetGuardrails();
-  } catch (error) {
-    console.error("Asset guardrails failed:", error?.message || error);
-    process.exit(1);
-  }
-}
 
 app.listen(PORT, () => {
   console.log(`EventGo backend running on port ${PORT}`);

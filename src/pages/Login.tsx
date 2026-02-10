@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useCognitoAuth } from "@/contexts/CognitoAuthContext";
 import { useAuth } from "@/contexts/AuthContext";
-const eventgoLogo = "/assets/logos/eventgo-logo.webp";
+import eventgoLogo from "@/assets/eventgo-logo.png";
 
 export default function Login() {
   const { loginWithPassword } = useCognitoAuth();

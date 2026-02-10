@@ -41,11 +41,6 @@ COPY --chown=nodejs:nodejs . .
 # Switch to nodejs user
 USER nodejs
 
-# Default runtime settings (can be overridden by docker-compose)
-ENV NODE_ENV=production
-ENV ASSET_ROOT=/var/www/assets
-ENV FRONTEND_BUILD_ROOT=/var/www/frontend
-
 # Expose port
 EXPOSE 5000
 

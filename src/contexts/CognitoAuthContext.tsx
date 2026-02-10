@@ -119,7 +119,7 @@ export function CognitoAuthProvider({ children }: { children: ReactNode }) {
         });
         return { success: true };
       } catch (error) {
-        return { success: false, message: getApiErrorMessage(error, "Invalid credentials") };
+        return { success: false, message: "Invalid credentials" };
       }
     },
     [persistTokens]
@@ -131,7 +131,7 @@ export function CognitoAuthProvider({ children }: { children: ReactNode }) {
         const response = await apiClient.authSignup(data);
         return { success: true, userConfirmed: response?.userConfirmed };
       } catch (error) {
-        return { success: false, message: getApiErrorMessage(error, "Sign up failed") };
+        return { success: false, message: "Sign up failed" };
       }
     },
     []
@@ -142,7 +142,7 @@ export function CognitoAuthProvider({ children }: { children: ReactNode }) {
       await apiClient.confirmSignup(data);
       return { success: true };
     } catch (error) {
-      return { success: false, message: getApiErrorMessage(error, "Invalid confirmation code") };
+      return { success: false, message: "Invalid confirmation code" };
     }
   }, []);
 
@@ -151,7 +151,7 @@ export function CognitoAuthProvider({ children }: { children: ReactNode }) {
       await apiClient.resendConfirmation(data);
       return { success: true };
     } catch (error) {
-      return { success: false, message: getApiErrorMessage(error, "Failed to resend code") };
+      return { success: false, message: "Failed to resend code" };
     }
   }, []);
 
@@ -160,7 +160,7 @@ export function CognitoAuthProvider({ children }: { children: ReactNode }) {
       await apiClient.forgotPassword(data);
       return { success: true };
     } catch (error) {
-      return { success: false, message: getApiErrorMessage(error, "Failed to start reset") };
+      return { success: false, message: "Failed to start reset" };
     }
   }, []);
 
@@ -170,7 +170,7 @@ export function CognitoAuthProvider({ children }: { children: ReactNode }) {
         await apiClient.confirmForgotPassword(data);
         return { success: true };
       } catch (error) {
-        return { success: false, message: getApiErrorMessage(error, "Failed to reset password") };
+        return { success: false, message: "Failed to reset password" };
       }
     },
     []
@@ -239,14 +239,6 @@ export function useCognitoAuth() {
     throw new Error("useCognitoAuth must be used within CognitoAuthProvider");
   }
   return context;
-}
-
-function getApiErrorMessage(error: unknown, fallback: string) {
-  const responseMessage = (error as { response?: { data?: { message?: unknown } } })?.response?.data?.message;
-  if (typeof responseMessage === "string" && responseMessage.trim()) {
-    return responseMessage;
-  }
-  return fallback;
 }
 
 // JWT Decoder Helper

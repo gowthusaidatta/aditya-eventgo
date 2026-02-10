@@ -6,17 +6,6 @@ services:
       - .env.docker
     environment:
       - NODE_ENV=production
-      - EVENTGO_MAIN_TABLE=${EVENTGO_MAIN_TABLE}
-      - EVENTGO_DEFAULT_TENANT_ID=${EVENTGO_DEFAULT_TENANT_ID}
-      - EVENTGO_DUAL_WRITE=${EVENTGO_DUAL_WRITE}
-      - ENABLE_LEGACY_FALLBACK=${ENABLE_LEGACY_FALLBACK}
-      - LEGACY_FALLBACK_DISABLED_TENANTS=${LEGACY_FALLBACK_DISABLED_TENANTS}
-      - ASSET_ROOT=${ASSET_ROOT}
-      - FRONTEND_BUILD_ROOT=${FRONTEND_BUILD_ROOT}
-      - ENFORCE_ASSET_GUARDRAILS=${ENFORCE_ASSET_GUARDRAILS:-true}
-    volumes:
-      - /var/www/frontend:/var/www/frontend:ro
-      - /var/www/assets:/var/www/assets:ro
     restart: always
     deploy:
       resources:
@@ -59,8 +48,6 @@ services:
     volumes:
       - ./nginx.proxy.prod.conf:/etc/nginx/nginx.conf:ro
       - ./certs:/etc/nginx/certs:ro
-      - /var/www/frontend:/var/www/frontend:ro
-      - /var/www/assets:/var/www/assets:ro
     depends_on:
       - backend
       - frontend

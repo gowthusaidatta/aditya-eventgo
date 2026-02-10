@@ -77,59 +77,6 @@ export default function CreateEvent() {
   const [whoCanRegister, setWhoCanRegister] = useState("Everyone can apply");
   const [collegeOrganization, setCollegeOrganization] = useState("Everyone can apply");
   const [genderCriteria, setGenderCriteria] = useState("Everyone can apply");
-  const [difficultyLevel, setDifficultyLevel] = useState("Beginner");
-  const [allowedOrganizations, setAllowedOrganizations] = useState("");
-
-  // Hackathon config
-  const [hackathonDuration, setHackathonDuration] = useState("24");
-  const [problemStatement, setProblemStatement] = useState("");
-  const [tracksInput, setTracksInput] = useState("");
-  const [allowedTechInput, setAllowedTechInput] = useState("");
-  const [mentorshipProvided, setMentorshipProvided] = useState(false);
-  const [judgesInput, setJudgesInput] = useState("");
-  const [evaluationCriteriaInput, setEvaluationCriteriaInput] = useState("");
-  const [certificateType, setCertificateType] = useState("Participation");
-  const [submissionRequirements, setSubmissionRequirements] = useState("");
-  const [submissionDeadline, setSubmissionDeadline] = useState("");
-  const [rules, setRules] = useState("");
-
-  // Workshop config
-  const [workshopTopic, setWorkshopTopic] = useState("");
-  const [workshopInstructors, setWorkshopInstructors] = useState("");
-  const [workshopLevel, setWorkshopLevel] = useState("Beginner");
-  const [workshopPrerequisites, setWorkshopPrerequisites] = useState("");
-  const [workshopTools, setWorkshopTools] = useState("");
-  const [workshopDuration, setWorkshopDuration] = useState("");
-  const [handsOn, setHandsOn] = useState(false);
-  const [workshopCertificate, setWorkshopCertificate] = useState(false);
-  const [workshopSeats, setWorkshopSeats] = useState("");
-  const [workshopFeeType, setWorkshopFeeType] = useState("Free");
-  const [paymentEnabled, setPaymentEnabled] = useState(false);
-
-  // Seminar config
-  const [seminarSpeakers, setSeminarSpeakers] = useState("");
-  const [seminarAgenda, setSeminarAgenda] = useState("");
-  const [seminarSessionType, setSeminarSessionType] = useState("Keynote");
-  const [seminarQna, setSeminarQna] = useState(false);
-  const [seminarRecording, setSeminarRecording] = useState(false);
-  const [seminarCertificate, setSeminarCertificate] = useState(false);
-
-  // Fest config
-  const [festCategory, setFestCategory] = useState("Dance");
-  const [festSubCategory, setFestSubCategory] = useState("");
-  const [festTimeSlot, setFestTimeSlot] = useState("");
-  const [festStageRequirements, setFestStageRequirements] = useState("");
-  const [festPropsAllowed, setFestPropsAllowed] = useState(false);
-  const [festJudgingCriteria, setFestJudgingCriteria] = useState("");
-  const [festPrizeDetails, setFestPrizeDetails] = useState("");
-
-  // Competition config
-  const [competitionType, setCompetitionType] = useState("");
-  const [competitionRounds, setCompetitionRounds] = useState("");
-  const [competitionScoring, setCompetitionScoring] = useState("");
-  const [competitionElimination, setCompetitionElimination] = useState("");
-  const [competitionConstraints, setCompetitionConstraints] = useState("");
-  const [competitionPrizes, setCompetitionPrizes] = useState("");
 
   // Schedule
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
@@ -213,11 +160,6 @@ export default function CreateEvent() {
       return;
     }
 
-    if (!imageUrl) {
-      toast({ title: "Error", description: "Event banner image is required", variant: "destructive" });
-      return;
-    }
-
     if (mode !== "online" && !location.trim()) {
       toast({ title: "Error", description: "Location is required for offline or hybrid events", variant: "destructive" });
       return;
@@ -263,76 +205,8 @@ export default function CreateEvent() {
         .filter((skill) => skill.length > 0);
       const useTeamSizes = participationType === "team" || isHackathon;
 
-      const eventConfig: Record<string, unknown> = {};
-      if (eventType === "hackathon") {
-        eventConfig.hackathon = {
-          duration_hours: hackathonDuration,
-          problem_statement: problemStatement,
-          tracks: tracksInput.split(",").map((v) => v.trim()).filter(Boolean),
-          allowed_technologies: allowedTechInput.split(",").map((v) => v.trim()).filter(Boolean),
-          mentorship_provided: mentorshipProvided,
-          judges: judgesInput,
-          evaluation_criteria: evaluationCriteriaInput,
-          certificate_type: certificateType,
-          submission_requirements: submissionRequirements,
-          submission_deadline: submissionDeadline ? new Date(submissionDeadline).toISOString() : null,
-          rules,
-        };
-      }
-
-      if (eventType === "workshop") {
-        eventConfig.workshop = {
-          topic: workshopTopic,
-          instructors: workshopInstructors,
-          level: workshopLevel,
-          prerequisites: workshopPrerequisites,
-          tools_required: workshopTools,
-          duration: workshopDuration,
-          hands_on: handsOn,
-          certificate_provided: workshopCertificate,
-          seats_limit: workshopSeats ? parseInt(workshopSeats, 10) : null,
-          fee_type: workshopFeeType,
-          payment_enabled: paymentEnabled,
-        };
-      }
-
-      if (eventType === "seminar") {
-        eventConfig.seminar = {
-          speakers: seminarSpeakers,
-          agenda: seminarAgenda,
-          session_type: seminarSessionType,
-          qna_enabled: seminarQna,
-          recording_available: seminarRecording,
-          certificate_provided: seminarCertificate,
-        };
-      }
-
-      if (eventType === "fest") {
-        eventConfig.fest = {
-          category: festCategory,
-          sub_category: festSubCategory,
-          time_slot: festTimeSlot,
-          stage_requirements: festStageRequirements,
-          props_allowed: festPropsAllowed,
-          judging_criteria: festJudgingCriteria,
-          prize_details: festPrizeDetails,
-        };
-      }
-
-      if (eventType === "competition") {
-        eventConfig.competition = {
-          competition_type: competitionType,
-          rounds: competitionRounds,
-          scoring_system: competitionScoring,
-          elimination_rules: competitionElimination,
-          constraints: competitionConstraints,
-          prizes: competitionPrizes,
-        };
-      }
-
       const event = await apiClient.createEvent({
         title,
-        short_description: description,
         description,
         full_description: fullDescription,
         event_type: eventType,
@@ -350,10 +224,6 @@ export default function CreateEvent() {
         image_url: imageUrl,
         video_url: videoUrl,
         tags: cleanTags,
-        skills: cleanSkills,
-        difficulty_level: difficultyLevel,
-        participation_type: participationType,
-        event_config: eventConfig,
         venue_details: {
           festival_campaign: festivalCampaign.trim() || null,
           website: websiteUrl.trim() || null,
@@ -363,10 +233,6 @@ export default function CreateEvent() {
             who_can_register: whoCanRegister.trim() || "Everyone can apply",
             college_organization: collegeOrganization.trim() || "Everyone can apply",
             gender: genderCriteria.trim() || "Everyone can apply",
-            allowed_organizations: allowedOrganizations
-              .split(",")
-              .map((value) => value.trim())
-              .filter(Boolean),
           },
         },
         prizes: prizes.filter(p => p.position && p.amount).map(({ id, ...p }) => p),
@@ -465,26 +331,17 @@ export default function CreateEvent() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="type">Event Type</Label>
-                    <Select
-                      value={eventType}
-                      onValueChange={(value) => {
-                        setEventType(value);
-                        setIsHackathon(value === "hackathon");
-                        if (value === "hackathon") {
-                          setParticipationType("team");
-                        }
-                      }}
-                    >
+                    <Select value={eventType} onValueChange={setEventType}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="hackathon">Hackathon</SelectItem>
                         <SelectItem value="workshop">Workshop</SelectItem>
-                        <SelectItem value="seminar">Seminar / Webinar</SelectItem>
-                        <SelectItem value="fest">Fest / Cultural Event</SelectItem>
+                        <SelectItem value="hackathon">Hackathon</SelectItem>
+                        <SelectItem value="seminar">Seminar</SelectItem>
+                        <SelectItem value="conference">Conference</SelectItem>
                         <SelectItem value="competition">Competition</SelectItem>
-                        <SelectItem value="other">Other</SelectItem>
+                        <SelectItem value="webinar">Webinar</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -525,8 +382,9 @@ export default function CreateEvent() {
                     checked={isHackathon}
                     onCheckedChange={(checked) => {
                       setIsHackathon(checked);
-                      setEventType(checked ? "hackathon" : eventType === "hackathon" ? "workshop" : eventType);
-                      if (checked) setParticipationType("team");
+                      if (checked) {
+                        setParticipationType("team");
+                      }
                     }}
                   />
                   <Label htmlFor="hackathon">This is a hackathon (enables team features)</Label>
@@ -547,30 +405,6 @@ export default function CreateEvent() {
                       value={skillsInput}
                       onChange={(e) => setSkillsInput(e.target.value)}
                       placeholder="e.g., React, Python, UI/UX"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label>Difficulty Level</Label>
-                    <Select value={difficultyLevel} onValueChange={setDifficultyLevel}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Beginner">Beginner</SelectItem>
-                        <SelectItem value="Intermediate">Intermediate</SelectItem>
-                        <SelectItem value="Advanced">Advanced</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Allowed Colleges / Organizations</Label>
-                    <Input
-                      value={allowedOrganizations}
-                      onChange={(e) => setAllowedOrganizations(e.target.value)}
-                      placeholder="Comma-separated list"
                     />
                   </div>
                 </div>
@@ -768,309 +602,6 @@ export default function CreateEvent() {
                     </div>
                   </div>
                 </div>
-
-                {eventType === "hackathon" && (
-                  <div className="space-y-4">
-                    <Label className="text-base">Hackathon Details</Label>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label>Duration (hours)</Label>
-                        <Input
-                          value={hackathonDuration}
-                          onChange={(e) => setHackathonDuration(e.target.value)}
-                          placeholder="24"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Tracks / Domains</Label>
-                        <Input
-                          value={tracksInput}
-                          onChange={(e) => setTracksInput(e.target.value)}
-                          placeholder="AI, Web, IoT"
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Problem Statement</Label>
-                      <Textarea
-                        value={problemStatement}
-                        onChange={(e) => setProblemStatement(e.target.value)}
-                        placeholder="Paste problem statement or link"
-                        rows={4}
-                      />
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label>Allowed Technologies</Label>
-                        <Input
-                          value={allowedTechInput}
-                          onChange={(e) => setAllowedTechInput(e.target.value)}
-                          placeholder="React, Node, Python"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Certificate Type</Label>
-                        <Select value={certificateType} onValueChange={setCertificateType}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Participation">Participation</SelectItem>
-                            <SelectItem value="Merit">Merit</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label>Judges Panel</Label>
-                        <Textarea
-                          value={judgesInput}
-                          onChange={(e) => setJudgesInput(e.target.value)}
-                          placeholder="Name - Designation"
-                          rows={3}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Evaluation Criteria (weighted)</Label>
-                        <Textarea
-                          value={evaluationCriteriaInput}
-                          onChange={(e) => setEvaluationCriteriaInput(e.target.value)}
-                          placeholder="Innovation:40, Feasibility:20"
-                          rows={3}
-                        />
-                      </div>
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label>Submission Requirements</Label>
-                        <Input
-                          value={submissionRequirements}
-                          onChange={(e) => setSubmissionRequirements(e.target.value)}
-                          placeholder="GitHub, PPT, Demo Video"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Submission Deadline</Label>
-                        <Input
-                          type="datetime-local"
-                          value={submissionDeadline}
-                          onChange={(e) => setSubmissionDeadline(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Rules & Code of Conduct</Label>
-                      <Textarea
-                        value={rules}
-                        onChange={(e) => setRules(e.target.value)}
-                        placeholder="Add rules and guidelines"
-                        rows={4}
-                      />
-                    </div>
-                    <div className="flex items-center space-x-4">
-                      <Switch
-                        checked={mentorshipProvided}
-                        onCheckedChange={setMentorshipProvided}
-                      />
-                      <Label>Mentorship Provided</Label>
-                    </div>
-                  </div>
-                )}
-
-                {eventType === "workshop" && (
-                  <div className="space-y-4">
-                    <Label className="text-base">Workshop Details</Label>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label>Topic</Label>
-                        <Input value={workshopTopic} onChange={(e) => setWorkshopTopic(e.target.value)} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Level</Label>
-                        <Select value={workshopLevel} onValueChange={setWorkshopLevel}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Beginner">Beginner</SelectItem>
-                            <SelectItem value="Intermediate">Intermediate</SelectItem>
-                            <SelectItem value="Advanced">Advanced</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Instructor(s)</Label>
-                      <Textarea value={workshopInstructors} onChange={(e) => setWorkshopInstructors(e.target.value)} rows={3} />
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label>Prerequisites</Label>
-                        <Textarea value={workshopPrerequisites} onChange={(e) => setWorkshopPrerequisites(e.target.value)} rows={3} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Tools / Software Required</Label>
-                        <Textarea value={workshopTools} onChange={(e) => setWorkshopTools(e.target.value)} rows={3} />
-                      </div>
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label>Duration</Label>
-                        <Input value={workshopDuration} onChange={(e) => setWorkshopDuration(e.target.value)} placeholder="2 hours" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Seats Limit</Label>
-                        <Input type="number" value={workshopSeats} onChange={(e) => setWorkshopSeats(e.target.value)} />
-                      </div>
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label>Fee</Label>
-                        <Select value={workshopFeeType} onValueChange={setWorkshopFeeType}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Free">Free</SelectItem>
-                            <SelectItem value="Paid">Paid</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="flex items-center space-x-4 pt-6">
-                        <Switch checked={paymentEnabled} onCheckedChange={setPaymentEnabled} />
-                        <Label>Payment Integration</Label>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-4">
-                      <Switch checked={handsOn} onCheckedChange={setHandsOn} />
-                      <Label>Hands-on Sessions</Label>
-                    </div>
-                    <div className="flex items-center space-x-4">
-                      <Switch checked={workshopCertificate} onCheckedChange={setWorkshopCertificate} />
-                      <Label>Certificate Provided</Label>
-                    </div>
-                  </div>
-                )}
-
-                {eventType === "seminar" && (
-                  <div className="space-y-4">
-                    <Label className="text-base">Seminar / Webinar Details</Label>
-                    <div className="space-y-2">
-                      <Label>Speakers</Label>
-                      <Textarea value={seminarSpeakers} onChange={(e) => setSeminarSpeakers(e.target.value)} rows={3} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Agenda / Schedule</Label>
-                      <Textarea value={seminarAgenda} onChange={(e) => setSeminarAgenda(e.target.value)} rows={3} />
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label>Session Type</Label>
-                        <Select value={seminarSessionType} onValueChange={setSeminarSessionType}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Keynote">Keynote</SelectItem>
-                            <SelectItem value="Panel Discussion">Panel Discussion</SelectItem>
-                            <SelectItem value="Fireside Chat">Fireside Chat</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="flex items-center space-x-4 pt-6">
-                        <Switch checked={seminarQna} onCheckedChange={setSeminarQna} />
-                        <Label>Q&A Enabled</Label>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-4">
-                      <Switch checked={seminarRecording} onCheckedChange={setSeminarRecording} />
-                      <Label>Recording Available</Label>
-                    </div>
-                    <div className="flex items-center space-x-4">
-                      <Switch checked={seminarCertificate} onCheckedChange={setSeminarCertificate} />
-                      <Label>Certificate Provided</Label>
-                    </div>
-                  </div>
-                )}
-
-                {eventType === "fest" && (
-                  <div className="space-y-4">
-                    <Label className="text-base">Fest / Cultural Details</Label>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label>Category</Label>
-                        <Select value={festCategory} onValueChange={setFestCategory}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Dance">Dance</SelectItem>
-                            <SelectItem value="Singing">Singing</SelectItem>
-                            <SelectItem value="Stand-up Comedy">Stand-up Comedy</SelectItem>
-                            <SelectItem value="Music">Music</SelectItem>
-                            <SelectItem value="Skit">Skit</SelectItem>
-                            <SelectItem value="Other">Other</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Sub Category / Team Type</Label>
-                        <Input value={festSubCategory} onChange={(e) => setFestSubCategory(e.target.value)} placeholder="Solo / Duo / Group" />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Time Slot Selection</Label>
-                      <Input value={festTimeSlot} onChange={(e) => setFestTimeSlot(e.target.value)} placeholder="Evening Slot" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Stage Requirements</Label>
-                      <Textarea value={festStageRequirements} onChange={(e) => setFestStageRequirements(e.target.value)} rows={3} />
-                    </div>
-                    <div className="flex items-center space-x-4">
-                      <Switch checked={festPropsAllowed} onCheckedChange={setFestPropsAllowed} />
-                      <Label>Props Allowed</Label>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Judging Criteria</Label>
-                      <Textarea value={festJudgingCriteria} onChange={(e) => setFestJudgingCriteria(e.target.value)} rows={3} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Prize Details</Label>
-                      <Textarea value={festPrizeDetails} onChange={(e) => setFestPrizeDetails(e.target.value)} rows={3} />
-                    </div>
-                  </div>
-                )}
-
-                {eventType === "competition" && (
-                  <div className="space-y-4">
-                    <Label className="text-base">Competition Details</Label>
-                    <div className="space-y-2">
-                      <Label>Competition Type</Label>
-                      <Input value={competitionType} onChange={(e) => setCompetitionType(e.target.value)} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Rounds</Label>
-                      <Textarea value={competitionRounds} onChange={(e) => setCompetitionRounds(e.target.value)} rows={3} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Scoring System</Label>
-                      <Textarea value={competitionScoring} onChange={(e) => setCompetitionScoring(e.target.value)} rows={3} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Elimination Rules</Label>
-                      <Textarea value={competitionElimination} onChange={(e) => setCompetitionElimination(e.target.value)} rows={3} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Team / Individual Constraints</Label>
-                      <Textarea value={competitionConstraints} onChange={(e) => setCompetitionConstraints(e.target.value)} rows={3} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Prizes & Certificates</Label>
-                      <Textarea value={competitionPrizes} onChange={(e) => setCompetitionPrizes(e.target.value)} rows={3} />
-                    </div>
-                  </div>
-                )}
               </CardContent>
             </Card>
           </TabsContent>
