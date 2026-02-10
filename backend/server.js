@@ -1153,8 +1153,15 @@ app.put("/users/me", requireAuth, async (req, res) => {
     const data = await updateUserWithFallbackKey({ userId, update });
     res.json(data.Attributes || {});
   } catch (error) {
-    console.error("Failed to update user profile:", error);
-    res.status(500).json({ message: "Failed to update user profile" });
+    console.error("Failed to update user profile:", {
+      name: error?.name,
+      message: error?.message,
+      stack: error?.stack,
+    });
+    res.status(500).json({
+      message: "Failed to update user profile",
+      code: error?.name || "UnknownError",
+    });
   }
 });
 
