@@ -276,6 +276,15 @@ function buildSecretHash(username) {
     .digest("base64");
 }
 
+function normalizeCognitoUsername(value) {
+  if (!value || typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (trimmed.includes("@")) {
+    return trimmed.toLowerCase();
+  }
+  return trimmed;
+}
+
 function ensureCognitoConfig(res) {
   if (!cognitoClient || !COGNITO_CLIENT_ID) {
     res.status(500).json({ message: "Cognito configuration missing" });
@@ -970,8 +979,8 @@ app.post("/auth/login", async (req, res) => {
     res.status(400).json({ message: "Username and password are required" });
     return;
   }
-
-  const secretHash = buildSecretHash(username);
+  const normalizedUsername = normalizeCognitoUsername(username);
+  const secretHash = buildSecretHash(normalizedUsername);
 
   try {
     const response = await cognitoClient.send(
@@ -979,7 +988,7 @@ app.post("/auth/login", async (req, res) => {
         ClientId: COGNITO_CLIENT_ID,
         AuthFlow: "USER_PASSWORD_AUTH",
         AuthParameters: {
-          USERNAME: username,
+          USERNAME: normalizedUsername,
           PASSWORD: password,
           ...(secretHash ? { SECRET_HASH: secretHash } : {}),
         },
@@ -1017,13 +1026,12 @@ app.post("/auth/refresh", async (req, res) => {
     res.status(400).json({ message: "Refresh token is required" });
     return;
   }
-
-  if (COGNITO_CLIENT_SECRET && !username) {
+  const normalizedUsername = normalizeCognitoUsername(username);
+  if (COGNITO_CLIENT_SECRET && !normalizedUsername) {
     res.status(400).json({ message: "Username is required for token refresh" });
     return;
   }
-
-  const secretHash = username ? buildSecretHash(username) : undefined;
+  const secretHash = normalizedUsername ? buildSecretHash(normalizedUsername) : undefined;
 
   try {
     const response = await cognitoClient.send(
@@ -1032,7 +1040,7 @@ app.post("/auth/refresh", async (req, res) => {
         AuthFlow: "REFRESH_TOKEN_AUTH",
         AuthParameters: {
           REFRESH_TOKEN: refreshToken,
-          ...(username ? { USERNAME: username } : {}),
+          ...(normalizedUsername ? { USERNAME: normalizedUsername } : {}),
           ...(secretHash ? { SECRET_HASH: secretHash } : {}),
         },
       })
@@ -1060,9 +1068,9 @@ app.post("/auth/signup", async (req, res) => {
     res.status(400).json({ message: "Email and password are required" });
     return;
   }
-
-  const secretHash = buildSecretHash(email);
-  const attributes = [{ Name: "email", Value: email }];
+  const normalizedEmail = normalizeCognitoUsername(email);
+  const secretHash = buildSecretHash(normalizedEmail);
+  const attributes = [{ Name: "email", Value: normalizedEmail }];
   if (name) attributes.push({ Name: "name", Value: name });
   if (phone) attributes.push({ Name: "phone_number", Value: phone });
 
@@ -1070,7 +1078,7 @@ app.post("/auth/signup", async (req, res) => {
     const response = await cognitoClient.send(
       new SignUpCommand({
         ClientId: COGNITO_CLIENT_ID,
-        Username: email,
+        Username: normalizedEmail,
         Password: password,
         UserAttributes: attributes,
         ...(secretHash ? { SecretHash: secretHash } : {}),
@@ -1097,14 +1105,14 @@ app.post("/auth/confirm-signup", async (req, res) => {
     res.status(400).json({ message: "Username and code are required" });
     return;
   }
-
-  const secretHash = buildSecretHash(username);
+  const normalizedUsername = normalizeCognitoUsername(username);
+  const secretHash = buildSecretHash(normalizedUsername);
 
   try {
     await cognitoClient.send(
       new ConfirmSignUpCommand({
         ClientId: COGNITO_CLIENT_ID,
-        Username: username,
+        Username: normalizedUsername,
         ConfirmationCode: code,
         ...(secretHash ? { SecretHash: secretHash } : {}),
       })
@@ -1125,14 +1133,14 @@ app.post("/auth/resend-confirmation", async (req, res) => {
     res.status(400).json({ message: "Username is required" });
     return;
   }
-
-  const secretHash = buildSecretHash(username);
+  const normalizedUsername = normalizeCognitoUsername(username);
+  const secretHash = buildSecretHash(normalizedUsername);
 
   try {
     const response = await cognitoClient.send(
       new ResendConfirmationCodeCommand({
         ClientId: COGNITO_CLIENT_ID,
-        Username: username,
+        Username: normalizedUsername,
         ...(secretHash ? { SecretHash: secretHash } : {}),
       })
     );
@@ -1152,14 +1160,14 @@ app.post("/auth/forgot-password", async (req, res) => {
     res.status(400).json({ message: "Username is required" });
     return;
   }
-
-  const secretHash = buildSecretHash(username);
+  const normalizedUsername = normalizeCognitoUsername(username);
+  const secretHash = buildSecretHash(normalizedUsername);
 
   try {
     const response = await cognitoClient.send(
       new ForgotPasswordCommand({
         ClientId: COGNITO_CLIENT_ID,
-        Username: username,
+        Username: normalizedUsername,
         ...(secretHash ? { SecretHash: secretHash } : {}),
       })
     );
@@ -1179,14 +1187,14 @@ app.post("/auth/confirm-forgot-password", async (req, res) => {
     res.status(400).json({ message: "Username, code, and new password are required" });
     return;
   }
-
-  const secretHash = buildSecretHash(username);
+  const normalizedUsername = normalizeCognitoUsername(username);
+  const secretHash = buildSecretHash(normalizedUsername);
 
   try {
     await cognitoClient.send(
       new ConfirmForgotPasswordCommand({
         ClientId: COGNITO_CLIENT_ID,
-        Username: username,
+        Username: normalizedUsername,
         ConfirmationCode: code,
         Password: newPassword,
         ...(secretHash ? { SecretHash: secretHash } : {}),
