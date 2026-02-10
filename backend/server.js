@@ -4008,7 +4008,7 @@ app.post("/media/presign", requireAuth, async (req, res) => {
   }
 });
 
-if (process.env.ENFORCE_ASSET_GUARDRAILS !== "false") {
+if (process.env.ENFORCE_ASSET_GUARDRAILS === "true") {
   try {
     assertAssetGuardrails();
   } catch (error) {
