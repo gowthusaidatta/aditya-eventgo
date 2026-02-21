@@ -22,16 +22,33 @@ export default function Login() {
     setError(null);
     setIsSubmitting(true);
 
-    const result = await loginWithPassword({ username: username.trim(), password });
-    setIsSubmitting(false);
+    let didTimeout = false;
+    const timeout = setTimeout(() => {
+      didTimeout = true;
+      setIsSubmitting(false);
+      setError("Server is taking too long. Please try again later.");
+    }, 10000); // 10 seconds
 
-    if (result.success) {
-      await refreshProfile();
-      navigate("/dashboard");
-      return;
+    try {
+      const result = await Promise.race([
+        loginWithPassword({ username: username.trim(), password }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 10000))
+      ]);
+      clearTimeout(timeout);
+      if (didTimeout) return;
+      setIsSubmitting(false);
+      if (result.success) {
+        await refreshProfile();
+        navigate("/dashboard");
+        return;
+      }
+      setError(result.message || "Login failed");
+    } catch (err: any) {
+      clearTimeout(timeout);
+      if (didTimeout) return;
+      setIsSubmitting(false);
+      setError(err.message === "timeout" ? "Server is taking too long. Please try again later." : "Login failed");
     }
-
-    setError(result.message || "Login failed");
   };
 
   return (
